@@ -1,0 +1,11 @@
+[Unit]
+Description=Predictive Edge Migration Runtime
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/edge_runtime
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
