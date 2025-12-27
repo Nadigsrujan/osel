@@ -9,6 +9,7 @@ typedef struct {
     long task_id;
     int progress_counter;
     char state_label[64];
+    char payload_path[256]; // Path to the file being processed (e.g., car.jpg)
     uint64_t timestamp;
 } task_state_t;
 

@@ -8,23 +8,27 @@ typedef struct {
     int latency;
 } telemetry_t;
 
-int collect_telemetry(telemetry_t *t) {
-    FILE *fp = fopen("/proc/edge_metrics", "r");
-    if (!fp) {
-        // Fallback or simulation for non-linux systems for demo purposes
-        t->cpu_load = rand() % 100;
-        t->battery_level = 80;
-        t->latency = 15;
-        return 0;
+int collect_telemetry(telemetry_t *t, int is_task_running) {
+    static int time_counter = 0;
+    
+    // Simulate real-world metrics based on time and activity
+    // If a task is running, CPU goes up. If not, it cools down.
+    if (is_task_running) {
+        t->cpu_load = 40 + (time_counter * 8); 
+        t->battery_level = 100 - (time_counter * 3);
+    } else {
+        t->cpu_load = 20 + (rand() % 10); // Idle load
+        t->battery_level = 100; // Charging simulation
+        time_counter = 0; // Reset "stress" when idle
     }
 
-    char line[128];
-    while (fgets(line, sizeof(line), fp)) {
-        if (sscanf(line, "cpu_load: %d%%", &t->cpu_load)) ;
-        else if (sscanf(line, "battery_level: %d%%", &t->battery_level)) ;
-        else if (sscanf(line, "latency_spike: %dms", &t->latency)) ;
-    }
-
-    fclose(fp);
+    // Safety caps
+    if (t->cpu_load > 99) t->cpu_load = 99;
+    if (t->cpu_load < 0) t->cpu_load = 0;
+    if (t->battery_level < 5) t->battery_level = 5;
+    
+    t->latency = 10 + (rand() % 50);
+    
+    time_counter++;
     return 0;
 }
