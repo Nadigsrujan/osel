@@ -1,34 +1,144 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef struct {
-    int cpu_load;
-    int battery_level;
-    int latency;
-} telemetry_t;
+    float cpu_load;        // 0-100%
+    float memory_used;     // 0-100%
+    int battery_percent;   // 0-100 (or -1 if no battery)
+    float cpu_temp;        // Celsius (or -1 if unavailable)
+} system_metrics_t;
 
-int collect_telemetry(telemetry_t *t, int is_task_running) {
-    static int time_counter = 0;
-    
-    // Simulate real-world metrics based on time and activity
-    // If a task is running, CPU goes up. If not, it cools down.
-    if (is_task_running) {
-        t->cpu_load = 40 + (time_counter * 8); 
-        t->battery_level = 100 - (time_counter * 3);
-    } else {
-        t->cpu_load = 20 + (rand() % 10); // Idle load
-        t->battery_level = 100; // Charging simulation
-        time_counter = 0; // Reset "stress" when idle
-    }
-
-    // Safety caps
-    if (t->cpu_load > 99) t->cpu_load = 99;
-    if (t->cpu_load < 0) t->cpu_load = 0;
-    if (t->battery_level < 5) t->battery_level = 5;
-    
-    t->latency = 10 + (rand() % 50);
-    
-    time_counter++;
+// Detect if running on Linux
+static int is_linux() {
+#ifdef __linux__
+    return 1;
+#else
     return 0;
+#endif
+}
+
+// Read CPU load from /proc/loadavg (Linux)
+static float read_cpu_load_linux() {
+    FILE *f = fopen("/proc/loadavg", "r");
+    if (!f) return -1;
+    
+    float load1, load5, load15;
+    fscanf(f, "%f %f %f", &load1, &load5, &load15);
+    fclose(f);
+    
+    // Get number of CPU cores
+    int cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cores < 1) cores = 1;
+    
+    // Convert load average to percentage (load/cores * 100)
+    float percent = (load1 / cores) * 100.0;
+    if (percent > 100) percent = 100;
+    
+    return percent;
+}
+
+// Read memory usage from /proc/meminfo (Linux)
+static float read_memory_linux() {
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return -1;
+    
+    char line[256];
+    long mem_total = 0, mem_available = 0;
+    
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "MemTotal:", 9) == 0) {
+            sscanf(line, "MemTotal: %ld kB", &mem_total);
+        } else if (strncmp(line, "MemAvailable:", 13) == 0) {
+            sscanf(line, "MemAvailable: %ld kB", &mem_available);
+        }
+    }
+    fclose(f);
+    
+    if (mem_total == 0) return -1;
+    float used_percent = ((float)(mem_total - mem_available) / mem_total) * 100.0;
+    return used_percent;
+}
+
+// Read battery level from /sys (Linux)
+static int read_battery_linux() {
+    FILE *f = fopen("/sys/class/power_supply/BAT0/capacity", "r");
+    if (!f) {
+        // Try BAT1
+        f = fopen("/sys/class/power_supply/BAT1/capacity", "r");
+    }
+    if (!f) return -1; // No battery
+    
+    int capacity;
+    fscanf(f, "%d", &capacity);
+    fclose(f);
+    return capacity;
+}
+
+// Read CPU temperature from /sys (Linux)
+static float read_temp_linux() {
+    FILE *f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+    if (!f) return -1;
+    
+    int temp_milli;
+    fscanf(f, "%d", &temp_milli);
+    fclose(f);
+    
+    return temp_milli / 1000.0; // Convert millidegrees to degrees
+}
+
+// Simulation fallback for macOS
+static int sim_counter = 0;
+static void simulate_metrics(system_metrics_t *m, int task_running) {
+    if (task_running) {
+        m->cpu_load = 40.0 + (sim_counter * 10.0);
+        if (m->cpu_load > 95) m->cpu_load = 95;
+        m->memory_used = 45.0 + (sim_counter * 2.0);
+        if (m->memory_used > 90) m->memory_used = 90;
+        m->battery_percent = 100 - (sim_counter * 3);
+        if (m->battery_percent < 10) m->battery_percent = 10;
+        m->cpu_temp = 45.0 + (sim_counter * 5.0);
+        if (m->cpu_temp > 85) m->cpu_temp = 85;
+        sim_counter++;
+    } else {
+        m->cpu_load = 15.0;
+        m->memory_used = 30.0;
+        m->battery_percent = 100;
+        m->cpu_temp = 40.0;
+        sim_counter = 0;
+    }
+}
+
+// Main telemetry collection function
+int collect_system_metrics(system_metrics_t *metrics, int task_running) {
+    if (is_linux()) {
+        // REAL HARDWARE TELEMETRY
+        metrics->cpu_load = read_cpu_load_linux();
+        metrics->memory_used = read_memory_linux();
+        metrics->battery_percent = read_battery_linux();
+        metrics->cpu_temp = read_temp_linux();
+        
+        // Fallback if any reading fails
+        if (metrics->cpu_load < 0) metrics->cpu_load = 50.0;
+        if (metrics->memory_used < 0) metrics->memory_used = 50.0;
+        
+        return 1; // Real data
+    } else {
+        // SIMULATION for macOS/Windows
+        simulate_metrics(metrics, task_running);
+        return 0; // Simulated data
+    }
+}
+
+// Reset simulation counter (for task return scenarios)
+void reset_telemetry_sim() {
+    sim_counter = 0;
+}
+
+// Pretty print metrics
+void print_metrics(system_metrics_t *m, int is_real) {
+    printf("[TELEMETRY%s] CPU:%.1f%% | MEM:%.1f%% | BAT:%d%% | TEMP:%.1f°C\n",
+           is_real ? "-REAL" : "-SIM",
+           m->cpu_load, m->memory_used, m->battery_percent, m->cpu_temp);
 }

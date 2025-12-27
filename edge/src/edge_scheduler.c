@@ -5,123 +5,148 @@
 #include <sys/types.h>
 #include <signal.h>
 #include "../include/checkpoint.h"
+#include "../include/telemetry.h"
+#include "../include/network_transfer.h"
 
-typedef struct {
-    int cpu_load;
-    int battery_level;
-    int latency;
-} telemetry_t;
+// Configuration
+#define CPU_THRESHOLD 80.0
+#define BATTERY_THRESHOLD 15
+#define TEMP_THRESHOLD 80.0
+#define PROGRESS_NO_MIGRATE 75
 
-int collect_telemetry(telemetry_t *t, int is_task_running);
-
-int should_migrate(telemetry_t *t) {
-    // If CPU > 80%, we MUST migrate to avoid local thermal throttling
-    return (t->cpu_load > 80);
+// Migration decision based on real metrics
+int should_migrate(system_metrics_t *m, int progress) {
+    if (progress > PROGRESS_NO_MIGRATE) return 0; // Too close to finish
+    
+    if (m->cpu_load > CPU_THRESHOLD) {
+        printf("[DECISION] CPU %.1f%% > %.1f%% threshold\n", m->cpu_load, CPU_THRESHOLD);
+        return 1;
+    }
+    if (m->battery_percent > 0 && m->battery_percent < BATTERY_THRESHOLD) {
+        printf("[DECISION] Battery %d%% < %d%% threshold\n", m->battery_percent, BATTERY_THRESHOLD);
+        return 1;
+    }
+    if (m->cpu_temp > TEMP_THRESHOLD) {
+        printf("[DECISION] Temperature %.1f°C > %.1f°C threshold\n", m->cpu_temp, TEMP_THRESHOLD);
+        return 1;
+    }
+    return 0;
 }
 
-int main() {
-    printf("--- REAL-TIME EDGE TASK MANAGER ---\n");
+int main(int argc, char *argv[]) {
+    printf("============================================\n");
+    printf("   EDGE TASK MANAGER - Phase 2 (Real HW)   \n");
+    printf("============================================\n\n");
     
-    task_state_t *active_task = NULL;
-    telemetry_t metrics;
-    pid_t python_pid = 0;
+    // Configuration from command line
+    char *cloud_ip = "127.0.0.1";
+    char *task_image = "edge/input/car.jpg";
     
-    const char *incoming_file = "/tmp/edge_restore_state.bin";
-    const char *outgoing_file = "/tmp/task_state.bin";
-    const char *internal_json = "/tmp/car_detect_internal.json";
+    if (argc > 1) cloud_ip = argv[1];
+    if (argc > 2) task_image = argv[2];
+    
+    printf("[CONFIG] Cloud IP: %s\n", cloud_ip);
+    printf("[CONFIG] Task Image: %s\n\n", task_image);
+    
+    set_cloud_ip(cloud_ip);
+    
+    task_state_t *task = NULL;
+    system_metrics_t metrics;
+    pid_t py_pid = 0;
+    int is_real_telemetry = 0;
+    
+    const char *state_file = "/tmp/task_state.bin";
+    const char *return_file = "/tmp/edge_return.bin";
+    const char *json_file = "/tmp/car_detect_internal.json";
 
     while (1) {
-        // 1. POLL: Check if Cloud sent a task back
-        if (active_task == NULL && access(incoming_file, F_OK) == 0) {
-            active_task = malloc(sizeof(task_state_t));
-            if (restore_checkpoint(incoming_file, active_task) == 0) {
-                printf("[MIGRATION-IN] Received task '%s' from Cloud.\n", active_task->state_label);
-                
-                // RESTORE INTERNAL STATE for Python
-                FILE *f = fopen(internal_json, "w");
-                fprintf(f, "{\"progress\": %d, \"result\": null}", active_task->progress_counter);
-                fclose(f);
-                
-                remove(incoming_file);
-            }
+        // 1. Check for tasks returning from Cloud
+        if (task == NULL && access(return_file, F_OK) == 0) {
+            task = malloc(sizeof(task_state_t));
+            restore_checkpoint(return_file, task);
+            printf("[RETURN] Task '%s' back from Cloud at %d%%\n", 
+                   task->state_label, task->progress_counter);
+            
+            FILE *f = fopen(json_file, "w");
+            fprintf(f, "{\"progress\": %d}", task->progress_counter);
+            fclose(f);
+            remove(return_file);
+            py_pid = 0;
+            reset_telemetry_sim();
         }
 
-        // 2. BOOTSTRAP: Start the real AI task if nothing is running
-        if (active_task == NULL) {
-            printf("[IDLE] Monitoring system... (Starting Car Detection on car.jpg)\n");
-            active_task = malloc(sizeof(task_state_t));
-            active_task->progress_counter = 0;
-            strcpy(active_task->state_label, "car_detect");
-            strcpy(active_task->payload_path, "edge/input/car.jpg");
+        // 2. Start new task if idle
+        if (task == NULL) {
+            task = malloc(sizeof(task_state_t));
+            task->progress_counter = 0;
+            strcpy(task->state_label, "car_detect");
+            strncpy(task->payload_path, task_image, sizeof(task->payload_path)-1);
+            printf("[START] Initializing Task: %s on %s\n", task->state_label, task->payload_path);
         }
 
-        // 3. MONITOR: Check actual Python process
-        if (python_pid == 0 && active_task != NULL) {
-            printf("[EXEC] Starting real AI inference: tasks/car_detect.py\n");
-            python_pid = fork();
-            if (python_pid == 0) {
-                // Child: Run the real Python script
-                execlp("python3", "python3", "tasks/car_detect.py", active_task->payload_path, (char *)NULL);
+        // 3. Launch Python process
+        if (py_pid == 0 && task) {
+            printf("[EXEC] Launching AI inference...\n");
+            py_pid = fork();
+            if (py_pid == 0) {
+                execlp("python3", "python3", "tasks/car_detect.py", task->payload_path, NULL);
                 exit(0);
             }
         }
 
-        // 4. TELEMETRY: Real-life resource monitoring
-        collect_telemetry(&metrics, 1); // Simulate task stress
-        printf("[SYSTEM] CPU:%d%% | MEM:42%% | TASK:%s (%d%%)\n", 
-               metrics.cpu_load, active_task->state_label, active_task->progress_counter);
-
-        // Update progress from internal state file
-        FILE *pf = fopen(internal_json, "r");
+        // 4. Collect REAL telemetry
+        is_real_telemetry = collect_system_metrics(&metrics, py_pid > 0);
+        
+        // Sync progress from JSON
+        FILE *pf = fopen(json_file, "r");
         if (pf) {
-            char buf[256];
-            if (fgets(buf, sizeof(buf), pf)) {
-                sscanf(buf, "{\"progress\": %d", &active_task->progress_counter);
-            }
+            char buf[128];
+            if (fgets(buf, sizeof(buf), pf)) 
+                sscanf(buf, "{\"progress\": %d", &task->progress_counter);
             fclose(pf);
         }
 
-        // 5. DECIDE: Migration Check
-        if (should_migrate(&metrics) && active_task->progress_counter < 100) {
-            printf("[WARN] Critical local load (%d%%). Triggering OS-Level Migration!\n", metrics.cpu_load);
-            
-            // a. Stop the local process
-            kill(python_pid, SIGKILL);
-            python_pid = 0;
-            
-            // b. Checkpoint and migrate
-            save_checkpoint(outgoing_file, active_task);
-            printf("[SECURE] Transferring Task State + Payload to Cloud...\n");
-            
-            // Simulation of transfer
-            usleep(800000); 
-            
-            printf("[SUCCESS] Task migrated. Edge Node entering Low Power State.\n");
-            free(active_task);
-            active_task = NULL;
-            
-            // Wait for it to come back or end
-            while(access(incoming_file, F_OK) != 0) {
-                printf("Edge Node: Idle/Waiting for Cloud to finish/return task...\n");
-                sleep(3);
-                // If the state file is gone from cloud but not here, it means it finished there.
-                // In a real system, we'd have a "finished" signal.
-                // For simplicity, let's assume it always returns or we check for /tmp/finished
-                if (access("/tmp/task_finished_signal", F_OK) == 0) {
-                    remove("/tmp/task_finished_signal");
-                    printf("[CLEANUP] Cloud reported task completion. System exiting.\n");
-                    return 0;
-                }
-            }
-            continue; // Re-poll incoming
-        }
+        // 5. Display status
+        print_metrics(&metrics, is_real_telemetry);
+        printf("[TASK] %s: %d%%\n", task->state_label, task->progress_counter);
 
-        // 6. FINISH: Task completed locally
-        if (active_task && active_task->progress_counter >= 100) {
-            printf("[FINISH] Local AI Task fully completed. Output verified.\n");
+        // 6. Check completion
+        if (task->progress_counter >= 100) {
+            printf("\n========================================\n");
+            printf("[FINISH] Task completed on Edge!\n");
+            printf("========================================\n");
+            if (py_pid > 0) kill(py_pid, SIGKILL);
             return 0;
         }
 
+        // 7. Migration decision
+        if (should_migrate(&metrics, task->progress_counter)) {
+            printf("\n[MIGRATE] Triggering migration to Cloud...\n");
+            if (py_pid > 0) kill(py_pid, SIGKILL);
+            py_pid = 0;
+            
+            save_checkpoint(state_file, task);
+            
+            // Try network transfer, fallback to file-based
+            if (send_checkpoint_to_cloud(state_file) < 0) {
+                printf("[NET] Network failed, using file-based transfer\n");
+            }
+            
+            free(task); 
+            task = NULL;
+            
+            // Wait for return
+            printf("[WAIT] Waiting for Cloud to finish processing...\n");
+            while (access(return_file, F_OK) != 0) {
+                printf("Edge: Waiting for Cloud...   \r");
+                fflush(stdout);
+                sleep(2);
+            }
+            printf("\n");
+            continue;
+        }
+
+        printf("-------------------------------------------\n");
         sleep(2);
     }
     return 0;
