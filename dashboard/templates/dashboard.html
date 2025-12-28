@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edge-Cloud Migration Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -14,64 +15,107 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0f2847 100%);
             min-height: 100vh;
             color: #fff;
-            padding: 20px;
+            padding: 15px;
         }
 
-        .container {
-            max-width: 1400px;
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: auto;
+            gap: 15px;
+            max-width: 1600px;
             margin: 0 auto;
         }
 
-        h1 {
+        .card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .card h3 {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
             text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 30px;
+            padding: 10px;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
             background: linear-gradient(90deg, #00d9ff, #00ff88);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
+        /* Status Bar */
+        .status-bar {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            font-size: 0.85rem;
         }
 
-        .card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .card h2 {
-            font-size: 1.1rem;
-            color: #888;
-            margin-bottom: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot.green {
+            background: #00c853;
+        }
+
+        .dot.red {
+            background: #f44336;
+        }
+
+        .dot.yellow {
+            background: #ff9800;
+        }
+
+        /* Main Status Card */
+        .main-status {
+            grid-column: span 2;
         }
 
         .status-badge {
             display: inline-block;
-            padding: 10px 24px;
-            border-radius: 30px;
+            padding: 12px 30px;
+            border-radius: 25px;
             font-weight: bold;
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             text-transform: uppercase;
             letter-spacing: 2px;
         }
 
         .status-idle {
-            background: #444;
-            color: #aaa;
+            background: #333;
+            color: #888;
         }
 
         .status-edge {
@@ -84,72 +128,47 @@
             color: #fff;
         }
 
-        .status-migrating {
-            background: linear-gradient(135deg, #ff9800, #ffb74d);
-            color: #000;
-            animation: pulse 1s infinite;
-        }
-
         .status-completed {
             background: linear-gradient(135deg, #9c27b0, #e91e63);
             color: #fff;
         }
 
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.6;
-            }
-        }
-
         .progress-container {
             background: rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            height: 40px;
+            border-radius: 10px;
+            height: 35px;
+            margin: 15px 0;
             overflow: hidden;
-            margin: 20px 0;
-            position: relative;
         }
 
         .progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #00d9ff, #00ff88);
-            border-radius: 12px;
-            transition: width 0.5s ease;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 1.1rem;
             color: #000;
-            min-width: 60px;
+            transition: width 0.5s;
         }
 
+        /* Telemetry Grid */
         .telemetry-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
         }
 
         .metric {
             background: rgba(255, 255, 255, 0.05);
-            padding: 20px;
-            border-radius: 12px;
+            padding: 12px;
+            border-radius: 8px;
             text-align: center;
-            transition: transform 0.3s ease;
-        }
-
-        .metric:hover {
-            transform: scale(1.02);
         }
 
         .metric-value {
-            font-size: 2.2rem;
+            font-size: 1.6rem;
             font-weight: bold;
             color: #00d9ff;
         }
@@ -163,89 +182,57 @@
         }
 
         .metric-label {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             color: #888;
-            margin-top: 8px;
-            text-transform: uppercase;
+            margin-top: 4px;
         }
 
-        .controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 20px;
+        /* Decision Engine */
+        .decision-engine {
+            grid-column: span 2;
         }
 
-        button {
-            padding: 16px 48px;
-            font-size: 1.1rem;
+        .decision-box {
+            background: rgba(0, 100, 200, 0.15);
+            border: 1px solid rgba(0, 150, 255, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .decision-action {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #ff9800, #ff5722);
+            border-radius: 20px;
+            display: inline-block;
             font-weight: bold;
-            border: none;
-            border-radius: 30px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .btn-start {
-            background: linear-gradient(135deg, #00c853, #00e676);
             color: #000;
         }
 
-        .btn-stop {
-            background: linear-gradient(135deg, #f44336, #e91e63);
-            color: #fff;
-        }
-
-        button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .history {
-            max-height: 250px;
-            overflow-y: auto;
-        }
-
-        .history-item {
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 0.9rem;
-            display: flex;
-            gap: 12px;
-        }
-
-        .history-time {
-            color: #00d9ff;
-            font-family: monospace;
-            min-width: 70px;
+        /* Migration Diagram */
+        .diagram-container {
+            grid-column: span 2;
         }
 
         .diagram {
             display: flex;
             justify-content: space-around;
             align-items: center;
-            padding: 30px 20px;
+            padding: 20px;
         }
 
         .node {
-            width: 140px;
-            height: 140px;
+            width: 110px;
+            height: 110px;
             border-radius: 50%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            position: relative;
+            transition: all 0.3s;
         }
 
         .node-edge {
@@ -259,8 +246,8 @@
         }
 
         .node.active {
-            transform: scale(1.15);
-            box-shadow: 0 0 40px currentColor;
+            transform: scale(1.2);
+            box-shadow: 0 0 30px currentColor;
         }
 
         .node-edge.active {
@@ -274,26 +261,18 @@
         }
 
         .node-icon {
-            font-size: 2.5rem;
-            margin-bottom: 8px;
+            font-size: 2rem;
         }
 
         .node-label {
-            font-size: 1rem;
-            letter-spacing: 2px;
-        }
-
-        .node-status {
-            position: absolute;
-            bottom: -25px;
-            font-size: 0.7rem;
-            color: #888;
+            font-size: 0.85rem;
+            margin-top: 5px;
         }
 
         .arrow {
-            font-size: 2.5rem;
+            font-size: 2rem;
             color: #444;
-            transition: all 0.3s ease;
+            transition: all 0.3s;
         }
 
         .arrow.active-right {
@@ -314,7 +293,7 @@
             }
 
             50% {
-                transform: translateX(15px);
+                transform: translateX(10px);
             }
         }
 
@@ -326,195 +305,404 @@
             }
 
             50% {
-                transform: translateX(-15px);
+                transform: translateX(-10px);
             }
         }
 
-        .info-bar {
+        /* Controls */
+        .controls {
             display: flex;
-            justify-content: space-between;
-            padding: 10px 20px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            margin-bottom: 20px;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 12px 35px;
+            font-size: 1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #00c853, #00e676);
+            color: #000;
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #f44336, #e91e63);
+            color: #fff;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Timeline */
+        .timeline {
+            grid-column: span 2;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .timeline-item {
+            padding: 8px;
+            border-left: 3px solid #00d9ff;
+            margin-left: 10px;
+            margin-bottom: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 0 6px 6px 0;
             font-size: 0.85rem;
+        }
+
+        .timeline-time {
+            color: #00d9ff;
+            font-family: monospace;
+        }
+
+        /* Task Output */
+        .task-output {
+            background: #000;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            max-height: 150px;
+            overflow-y: auto;
+            color: #0f0;
+        }
+
+        .task-output-line {
+            margin: 4px 0;
+        }
+
+        /* Fault Alerts */
+        .fault-list {
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .fault-item {
+            padding: 8px;
+            background: rgba(255, 152, 0, 0.1);
+            border-left: 3px solid #ff9800;
+            margin-bottom: 6px;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.85rem;
+        }
+
+        .fault-item.recovery {
+            border-left-color: #00c853;
+            background: rgba(0, 200, 83, 0.1);
+        }
+
+        /* Charts */
+        .chart-container {
+            height: 120px;
+        }
+
+        /* Migration Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
             color: #888;
         }
 
-        .info-item {
+        /* History */
+        .history {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.85rem;
             display: flex;
-            gap: 8px;
-            align-items: center;
+            gap: 10px;
         }
 
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        .dot.green {
-            background: #00c853;
-        }
-
-        .dot.red {
-            background: #f44336;
-        }
-
-        .dot.yellow {
-            background: #ff9800;
-        }
-
-        .task-info {
-            font-size: 1rem;
-            color: #aaa;
-            margin-top: 10px;
+        .history-time {
+            color: #00d9ff;
+            font-family: monospace;
+            min-width: 70px;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>🚀 Edge-Cloud Migration Dashboard</h1>
+    <div class="dashboard-grid">
+        <!-- Header -->
+        <div class="header">
+            <h1>🚀 Edge-Cloud OS Task Migration Dashboard</h1>
+        </div>
 
-        <div class="info-bar">
-            <div class="info-item">
-                <span class="dot" id="edge-dot"></span>
-                <span>Edge: <span id="edge-status">Stopped</span></span>
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item"><span class="dot" id="edge-dot"></span> Edge: <span id="edge-status">Stopped</span>
             </div>
-            <div class="info-item">
-                <span class="dot" id="cloud-dot"></span>
-                <span>Cloud: <span id="cloud-status">Stopped</span></span>
+            <div class="status-item"><span class="dot" id="cloud-dot"></span> Cloud: <span
+                    id="cloud-status">Stopped</span></div>
+            <div class="status-item"><span class="dot" id="sensor-dot"></span> Sensor: <span
+                    id="sensor-status">--</span></div>
+            <div class="status-item">🌐 Latency: <span id="latency-value">0ms</span></div>
+            <div class="status-item">⏱️ Uptime: <span id="uptime">0s</span></div>
+            <div class="status-item">❤️ Health: <span id="health-status">OK</span></div>
+        </div>
+
+        <!-- Main Status -->
+        <div class="card main-status">
+            <h3>📋 Task Status</h3>
+            <div id="status-badge" class="status-badge status-idle">IDLE</div>
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar" style="width: 0%">0%</div>
             </div>
-            <div class="info-item">
-                <span class="dot" id="sensor-dot"></span>
-                <span>Sensor: <span id="sensor-status">--</span></span>
-            </div>
-            <div class="info-item">
-                <span>Uptime: <span id="uptime">0s</span></span>
-            </div>
-            <div class="info-item">
-                <span>psutil: <span id="psutil-status">-</span></span>
+            <div id="task-name" style="color: #888;">No task running</div>
+        </div>
+
+        <!-- Telemetry -->
+        <div class="card">
+            <h3>📊 System Telemetry</h3>
+            <div class="telemetry-grid">
+                <div class="metric">
+                    <div id="cpu-value" class="metric-value">0%</div>
+                    <div class="metric-label">CPU</div>
+                </div>
+                <div class="metric">
+                    <div id="mem-value" class="metric-value">0%</div>
+                    <div class="metric-label">Memory</div>
+                </div>
+                <div class="metric">
+                    <div id="latency-metric" class="metric-value">0ms</div>
+                    <div class="metric-label">Latency</div>
+                </div>
+                <div class="metric">
+                    <div id="tasks-value" class="metric-value">1</div>
+                    <div class="metric-label">Tasks</div>
+                </div>
+                <div class="metric">
+                    <div id="migrations-value" class="metric-value">0</div>
+                    <div class="metric-label">Migrations</div>
+                </div>
+                <div class="metric">
+                    <div id="progress-metric" class="metric-value">0%</div>
+                    <div class="metric-label">Progress</div>
+                </div>
             </div>
         </div>
 
-        <div class="grid">
-            <!-- Task Status Card -->
-            <div class="card">
-                <h2>📋 Task Status</h2>
-                <div id="status-badge" class="status-badge status-idle">IDLE</div>
-                <div class="progress-container">
-                    <div id="progress-bar" class="progress-bar" style="width: 0%">0%</div>
-                </div>
-                <div id="task-name" class="task-info">No task running</div>
+        <!-- CPU Graph -->
+        <div class="card">
+            <h3>📈 CPU History</h3>
+            <div class="chart-container">
+                <canvas id="cpuChart"></canvas>
             </div>
+        </div>
 
-            <!-- Telemetry Card -->
-            <div class="card">
-                <h2>📊 System Telemetry</h2>
-                <div class="telemetry-grid">
-                    <div class="metric">
-                        <div id="cpu-value" class="metric-value">0%</div>
-                        <div class="metric-label">CPU Load</div>
-                    </div>
-                    <div class="metric">
-                        <div id="mem-value" class="metric-value">0%</div>
-                        <div class="metric-label">Memory</div>
-                    </div>
-                    <div class="metric">
-                        <div id="temp-value" class="metric-value">--</div>
-                        <div class="metric-label">Temperature</div>
-                    </div>
-                    <div class="metric">
-                        <div id="battery-value" class="metric-value">--</div>
-                        <div class="metric-label">Battery</div>
-                    </div>
-                </div>
+        <!-- Decision Engine -->
+        <div class="card decision-engine">
+            <h3>🧠 Decision Engine</h3>
+            <div class="decision-box">
+                <div>[Decision Manager]</div>
+                <div id="cpu-forecast">CPU forecast: <span>0%</span> ↑</div>
+                <div id="network-status">Network latency: <span>OK</span></div>
+                <div id="memory-status">Memory status: <span>OK</span></div>
+                <div id="task-criticality">Task Criticality: <span>Normal</span></div>
+                <div id="decision-reason" style="margin-top: 8px; color: #aaa;"></div>
             </div>
+            <div id="decision-action" class="decision-action" style="display: none;">None</div>
         </div>
 
         <!-- Migration Diagram -->
-        <div class="card">
-            <h2>🔄 Migration Flow</h2>
+        <div class="card diagram-container">
+            <h3>🔄 Migration Flow</h3>
             <div class="diagram">
                 <div id="node-edge" class="node node-edge">
                     <span class="node-icon">💻</span>
                     <span class="node-label">EDGE</span>
-                    <span class="node-status" id="edge-pid-label">PID: --</span>
                 </div>
                 <div id="arrow" class="arrow">⇄</div>
                 <div id="node-cloud" class="node node-cloud">
                     <span class="node-icon">☁️</span>
                     <span class="node-label">CLOUD</span>
-                    <span class="node-status" id="cloud-pid-label">PID: --</span>
                 </div>
             </div>
             <div class="controls">
                 <button id="btn-start" class="btn-start" onclick="startTask()">▶️ Start Task</button>
-                <button id="btn-stop" class="btn-stop" onclick="stopTask()">⏹️ Stop Task</button>
+                <button id="btn-stop" class="btn-stop" onclick="stopTask()">⏹️ Stop</button>
             </div>
         </div>
 
-        <!-- History Card -->
+        <!-- Migration Timeline -->
+        <div class="card timeline">
+            <h3>📜 Migration Timeline</h3>
+            <div id="timeline-list"></div>
+        </div>
+
+        <!-- Task Output -->
         <div class="card">
-            <h2>📜 Event History</h2>
-            <div id="history" class="history">
-                <div class="history-item">
-                    <span class="history-time">--:--:--</span>
-                    <span>Waiting for events...</span>
+            <h3>🖥️ Task Output</h3>
+            <div id="task-output" class="task-output">
+                <div class="task-output-line">[READY] Waiting for task...</div>
+            </div>
+        </div>
+
+        <!-- Fault/Recovery -->
+        <div class="card">
+            <h3>🛡️ Fault Handling</h3>
+            <div id="fault-list" class="fault-list">
+                <div class="fault-item recovery">✅ System Ready</div>
+            </div>
+        </div>
+
+        <!-- Migration Stats -->
+        <div class="card">
+            <h3>📊 Migration Stats</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div id="total-migrations" class="stat-value">0</div>
+                    <div class="stat-label">Total Migrations</div>
+                </div>
+                <div class="stat-item">
+                    <div id="last-migration" class="stat-value">--</div>
+                    <div class="stat-label">Last Migration</div>
+                </div>
+                <div class="stat-item">
+                    <div id="transfer-size" class="stat-value">0 KB</div>
+                    <div class="stat-label">Transfer Size</div>
+                </div>
+                <div class="stat-item">
+                    <div id="downtime" class="stat-value">0 ms</div>
+                    <div class="stat-label">Downtime</div>
                 </div>
             </div>
+        </div>
+
+        <!-- Event History -->
+        <div class="card" style="grid-column: span 2;">
+            <h3>📜 Event History</h3>
+            <div id="history" class="history"></div>
         </div>
     </div>
 
     <script>
+        // CPU Chart
+        const ctx = document.getElementById('cpuChart').getContext('2d');
+        const cpuChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(30).fill(''),
+                datasets: [{
+                    label: 'CPU %',
+                    data: Array(30).fill(0),
+                    borderColor: '#00d9ff',
+                    backgroundColor: 'rgba(0, 217, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { min: 0, max: 100, ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    x: { display: false }
+                }
+            }
+        });
+
         let lastLocation = 'idle';
 
         function updateDashboard() {
             fetch('/api/status')
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
-                    // Update status badge
+                    // Status badge
                     const badge = document.getElementById('status-badge');
                     badge.textContent = data.location.toUpperCase();
                     badge.className = 'status-badge status-' + data.location;
 
-                    // Update progress
+                    // Progress
                     const progress = data.progress || 0;
-                    const progressBar = document.getElementById('progress-bar');
-                    progressBar.style.width = Math.max(progress, 5) + '%';
-                    progressBar.textContent = progress + '%';
+                    const bar = document.getElementById('progress-bar');
+                    bar.style.width = Math.max(progress, 5) + '%';
+                    bar.textContent = progress + '%';
 
-                    // Update task name
+                    // Task name
                     document.getElementById('task-name').textContent =
                         data.task_name ? `Task: ${data.task_name}` : 'No task running';
 
-                    // Update telemetry with color coding
-                    updateMetric('cpu-value', data.telemetry.cpu, '%', 80, 95);
+                    // Telemetry
+                    updateMetric('cpu-value', data.telemetry.cpu, '%', 60, 80);
                     updateMetric('mem-value', data.telemetry.mem, '%', 80, 95);
 
-                    const tempEl = document.getElementById('temp-value');
-                    if (data.telemetry.temp !== null) {
-                        tempEl.textContent = data.telemetry.temp.toFixed(1) + '°C';
-                        tempEl.className = 'metric-value' +
-                            (data.telemetry.temp > 80 ? ' danger' :
-                                data.telemetry.temp > 60 ? ' warning' : '');
-                    } else {
-                        tempEl.textContent = '--';
+                    document.getElementById('latency-metric').textContent =
+                        (data.telemetry.network_latency || 0) + 'ms';
+
+                    document.getElementById('progress-metric').textContent =
+                        (data.progress || 0) + '%';
+
+                    document.getElementById('latency-value').textContent =
+                        (data.telemetry.network_latency || 0) + 'ms';
+
+                    document.getElementById('migrations-value').textContent =
+                        data.migration_stats.total_migrations;
+
+                    // CPU Chart
+                    if (data.cpu_history && data.cpu_history.length > 0) {
+                        cpuChart.data.datasets[0].data = data.cpu_history;
+                        cpuChart.update('none');
                     }
 
-                    const batteryEl = document.getElementById('battery-value');
-                    if (data.telemetry.battery !== null) {
-                        batteryEl.textContent = data.telemetry.battery + '%';
-                        batteryEl.className = 'metric-value' +
-                            (data.telemetry.battery < 15 ? ' danger' :
-                                data.telemetry.battery < 30 ? ' warning' : '');
-                    } else {
-                        batteryEl.textContent = '--';
+                    // Decision Engine
+                    if (data.decision) {
+                        document.getElementById('cpu-forecast').innerHTML =
+                            `CPU forecast: <span>${data.decision.cpu_forecast}%</span> ↑`;
+                        document.getElementById('network-status').innerHTML =
+                            `Network latency: <span>${data.decision.network_status}</span>`;
+                        document.getElementById('memory-status').innerHTML =
+                            `Memory status: <span>${data.telemetry.mem > 80 ? 'High' : 'OK'}</span>`;
+                        document.getElementById('decision-reason').textContent = data.decision.reason;
+
+                        const actionEl = document.getElementById('decision-action');
+                        if (data.decision.action && data.decision.action !== 'None') {
+                            actionEl.textContent = '➡ ' + data.decision.action;
+                            actionEl.style.display = 'inline-block';
+                        } else {
+                            actionEl.style.display = 'none';
+                        }
                     }
 
-                    // Update diagram
+                    // Migration diagram
                     const nodeEdge = document.getElementById('node-edge');
                     const nodeCloud = document.getElementById('node-cloud');
                     const arrow = document.getElementById('arrow');
@@ -523,140 +711,133 @@
                     nodeCloud.classList.remove('active');
                     arrow.className = 'arrow';
 
-                    if (data.location === 'edge') {
-                        nodeEdge.classList.add('active');
-                    } else if (data.location === 'cloud') {
-                        nodeCloud.classList.add('active');
-                    }
+                    if (data.location === 'edge') nodeEdge.classList.add('active');
+                    else if (data.location === 'cloud') nodeCloud.classList.add('active');
 
-                    // Animate arrow during migration
-                    if (lastLocation === 'edge' && data.location === 'cloud') {
-                        arrow.classList.add('active-right');
-                    } else if (lastLocation === 'cloud' && data.location === 'edge') {
-                        arrow.classList.add('active-left');
-                    }
+                    if (lastLocation === 'edge' && data.location === 'cloud') arrow.classList.add('active-right');
+                    else if (lastLocation === 'cloud' && data.location === 'edge') arrow.classList.add('active-left');
                     lastLocation = data.location;
 
-                    // Update process info
+                    // Process status
                     updateProcessStatus('edge', data.edge_pid, data.edge_running);
                     updateProcessStatus('cloud', data.cloud_pid, data.cloud_running);
 
-                    // Update info bar
-                    document.getElementById('uptime').textContent = formatUptime(data.uptime);
-                    document.getElementById('psutil-status').textContent =
-                        data.psutil_available ? '✅' : '❌';
+                    // Sensor status
+                    updateSensorStatus(data.sensor_status);
 
-                    // Update sensor status
-                    const sensorDot = document.getElementById('sensor-dot');
-                    const sensorStatus = document.getElementById('sensor-status');
-                    if (data.sensor_status === 'detected') {
-                        sensorDot.className = 'dot green';
-                        sensorStatus.textContent = '🚗 DETECTED!';
-                    } else if (data.sensor_status === 'waiting') {
-                        sensorDot.className = 'dot yellow';
-                        sensorStatus.textContent = '🔴 Waiting...';
-                    } else if (data.sensor_status === 'connected') {
-                        sensorDot.className = 'dot green';
-                        sensorStatus.textContent = '✅ Connected';
-                    } else if (data.sensor_status === 'demo') {
-                        sensorDot.className = 'dot yellow';
-                        sensorStatus.textContent = '📺 Demo Mode';
-                    } else if (data.sensor_status === 'error') {
-                        sensorDot.className = 'dot red';
-                        sensorStatus.textContent = '❌ Error';
-                    } else {
-                        sensorDot.className = 'dot';
-                        sensorStatus.textContent = '--';
+                    // Timeline
+                    if (data.migration_timeline && data.migration_timeline.length > 0) {
+                        document.getElementById('timeline-list').innerHTML =
+                            data.migration_timeline.slice().reverse().map(t => `
+                                <div class="timeline-item">
+                                    <span class="timeline-time">${t.time}</span> ${t.details}
+                                </div>
+                            `).join('');
                     }
 
-                    // Update button states
+                    // Task output
+                    if (data.task_output && data.task_output.length > 0) {
+                        document.getElementById('task-output').innerHTML =
+                            data.task_output.map(o => `
+                                <div class="task-output-line">${o.text}</div>
+                            `).join('');
+                    }
+
+                    // Faults
+                    if (data.faults && data.faults.length > 0) {
+                        document.getElementById('fault-list').innerHTML =
+                            data.faults.slice().reverse().map(f => `
+                                <div class="fault-item ${f.message.includes('✅') ? 'recovery' : ''}">${f.message}</div>
+                            `).join('');
+                    }
+
+                    // Migration stats
+                    document.getElementById('total-migrations').textContent =
+                        data.migration_stats.total_migrations;
+                    document.getElementById('last-migration').textContent =
+                        data.migration_stats.last_migration_time || '--';
+                    document.getElementById('transfer-size').textContent =
+                        data.migration_stats.last_transfer_size + ' KB';
+                    document.getElementById('downtime').textContent =
+                        data.migration_stats.last_downtime_ms + ' ms';
+
+                    // Info bar
+                    document.getElementById('uptime').textContent = formatUptime(data.uptime);
+                    document.getElementById('health-status').textContent = data.system_health || 'OK';
+
+                    // Buttons
                     document.getElementById('btn-start').disabled =
                         data.location !== 'idle' && data.location !== 'completed';
-                    document.getElementById('btn-stop').disabled =
-                        data.location === 'idle';
+                    document.getElementById('btn-stop').disabled = data.location === 'idle';
 
-                    // Update history
+                    // History
                     updateHistory(data.history);
                 })
-                .catch(err => console.error('Error:', err));
+                .catch(console.error);
         }
 
-        function updateMetric(id, value, suffix, warnThreshold, dangerThreshold) {
+        function updateMetric(id, value, suffix, warn, danger) {
             const el = document.getElementById(id);
-            if (value !== null && value !== undefined) {
+            if (value !== null) {
                 el.textContent = value.toFixed(1) + suffix;
-                el.className = 'metric-value' +
-                    (value > dangerThreshold ? ' danger' :
-                        value > warnThreshold ? ' warning' : '');
-            } else {
-                el.textContent = '--';
-                el.className = 'metric-value';
+                el.className = 'metric-value' + (value > danger ? ' danger' : value > warn ? ' warning' : '');
             }
         }
 
         function updateProcessStatus(type, pid, running) {
             const dot = document.getElementById(type + '-dot');
             const status = document.getElementById(type + '-status');
-            const pidLabel = document.getElementById(type + '-pid-label');
-
-            if (running && pid) {
-                dot.className = 'dot green';
-                status.textContent = 'Running';
-                pidLabel.textContent = 'PID: ' + pid;
-            } else {
-                dot.className = 'dot red';
-                status.textContent = 'Stopped';
-                pidLabel.textContent = 'PID: --';
-            }
+            dot.className = 'dot ' + (running ? 'green' : 'red');
+            status.textContent = running ? 'Running' : 'Stopped';
         }
 
-        function formatUptime(seconds) {
-            if (seconds < 60) return Math.round(seconds) + 's';
-            if (seconds < 3600) return Math.round(seconds / 60) + 'm';
-            return Math.round(seconds / 3600) + 'h';
+        function updateSensorStatus(status) {
+            const dot = document.getElementById('sensor-dot');
+            const text = document.getElementById('sensor-status');
+            const statusMap = {
+                'detected': { class: 'green', text: '🚗 DETECTED!' },
+                'waiting': { class: 'yellow', text: '🔴 Waiting...' },
+                'connected': { class: 'green', text: '✅ Connected' },
+                'demo': { class: 'yellow', text: '📺 Demo' },
+                'error': { class: 'red', text: '❌ Error' }
+            };
+            const s = statusMap[status] || { class: '', text: '--' };
+            dot.className = 'dot ' + s.class;
+            text.textContent = s.text;
+        }
+
+        function formatUptime(s) {
+            if (s < 60) return Math.round(s) + 's';
+            if (s < 3600) return Math.round(s / 60) + 'm';
+            return Math.round(s / 3600) + 'h';
         }
 
         function updateHistory(history) {
-            const container = document.getElementById('history');
-            if (!history || history.length === 0) return;
-
-            container.innerHTML = history.slice().reverse().map(item => `
-                <div class="history-item">
-                    <span class="history-time">${item.time}</span>
-                    <span>${item.event}</span>
-                </div>
-            `).join('');
+            if (!history || !history.length) return;
+            document.getElementById('history').innerHTML =
+                history.slice().reverse().map(h => `
+                    <div class="history-item">
+                        <span class="history-time">${h.time}</span>
+                        <span>${h.event}</span>
+                    </div>
+                `).join('');
         }
 
         function startTask() {
             document.getElementById('btn-start').disabled = true;
             fetch('/api/start', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('Error: ' + data.error);
-                    }
-                    updateDashboard();
-                })
-                .catch(err => {
-                    alert('Failed to start: ' + err);
-                    document.getElementById('btn-start').disabled = false;
-                });
+                .then(r => r.json())
+                .then(d => { if (d.error) alert('Error: ' + d.error); updateDashboard(); })
+                .catch(e => { alert('Failed: ' + e); document.getElementById('btn-start').disabled = false; });
         }
 
         function stopTask() {
             document.getElementById('btn-stop').disabled = true;
             fetch('/api/stop', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    updateDashboard();
-                })
-                .catch(err => {
-                    alert('Failed to stop: ' + err);
-                });
+                .then(() => updateDashboard())
+                .catch(e => alert('Failed: ' + e));
         }
 
-        // Update every second
         setInterval(updateDashboard, 1000);
         updateDashboard();
     </script>

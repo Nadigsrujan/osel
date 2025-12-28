@@ -39,17 +39,43 @@ state = {
     "task_name": None,
     "progress": 0,
     "location": "idle",  # idle, edge, cloud, migrating, completed
-    "telemetry": {"cpu": 0, "mem": 0, "temp": None, "battery": None},
+    "telemetry": {"cpu": 0, "mem": 0, "temp": None, "battery": None, "network_latency": 0},
     "history": [],
     "edge_pid": None,
     "cloud_pid": None,
     "edge_running": False,
     "cloud_running": False,
-    "stress_pids": [],  # PIDs of 'yes' processes for demo
-    "stress_started": False,  # Flag to start stress at 20%
-    "stress_stopped": False,  # Flag to stop stress at 60%
-    "sensor_status": None,    # Sensor status message
-    "sensor_message": ""      # Sensor status detail
+    "stress_pids": [],
+    "stress_started": False,
+    "stress_stopped": False,
+    "sensor_status": None,
+    "sensor_message": "",
+    # NEW: Decision Engine
+    "decision": {
+        "reason": "",
+        "cpu_forecast": 0,
+        "battery_trend": "stable",
+        "network_status": "OK",
+        "task_criticality": "Normal",
+        "action": "None"
+    },
+    # NEW: Fault/Recovery
+    "faults": [],
+    "system_health": "OK",
+    # NEW: CPU History for graphs (last 30 readings)
+    "cpu_history": [],
+    "mem_history": [],
+    # NEW: Migration Timeline
+    "migration_timeline": [],
+    # NEW: Task Output
+    "task_output": [],
+    # NEW: Migration Stats
+    "migration_stats": {
+        "total_migrations": 0,
+        "last_migration_time": None,
+        "last_transfer_size": 0,
+        "last_downtime_ms": 0
+    }
 }
 
 def log_event(message):
@@ -59,10 +85,73 @@ def log_event(message):
         "event": message
     }
     state["history"].append(event)
-    # Keep only last 50 events
     if len(state["history"]) > 50:
         state["history"] = state["history"][-50:]
     print(f"[{event['time']}] {message}")
+
+def log_timeline(event_type, details):
+    """Add to migration timeline"""
+    entry = {
+        "time": datetime.now().strftime("%H:%M:%S.%f")[:-3],
+        "type": event_type,
+        "details": details
+    }
+    state["migration_timeline"].append(entry)
+    if len(state["migration_timeline"]) > 100:
+        state["migration_timeline"] = state["migration_timeline"][-100:]
+
+def update_decision(reason, action, cpu_forecast=None):
+    """Update decision engine state"""
+    state["decision"]["reason"] = reason
+    state["decision"]["action"] = action
+    if cpu_forecast is not None:
+        state["decision"]["cpu_forecast"] = cpu_forecast
+    state["decision"]["battery_trend"] = "dropping" if state["telemetry"].get("battery", 100) and state["telemetry"]["battery"] < 30 else "stable"
+    state["decision"]["network_status"] = "OK" if state["telemetry"].get("network_latency", 0) < 100 else "High Latency"
+
+def log_fault(message):
+    """Log a fault/recovery event"""
+    fault = {
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "message": message
+    }
+    state["faults"].append(fault)
+    if len(state["faults"]) > 20:
+        state["faults"] = state["faults"][-20:]
+
+def add_task_output(line):
+    """Add task output line"""
+    state["task_output"].append({
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "text": line
+    })
+    if len(state["task_output"]) > 50:
+        state["task_output"] = state["task_output"][-50:]
+
+def update_cpu_history():
+    """Track CPU/Memory history for graphs"""
+    state["cpu_history"].append(state["telemetry"]["cpu"])
+    state["mem_history"].append(state["telemetry"]["mem"])
+    # Keep last 30 readings
+    if len(state["cpu_history"]) > 30:
+        state["cpu_history"] = state["cpu_history"][-30:]
+    if len(state["mem_history"]) > 30:
+        state["mem_history"] = state["mem_history"][-30:]
+
+def measure_network_latency():
+    """Measure network latency (simulated for local, real for remote)"""
+    import socket
+    try:
+        start = time.time()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        sock.connect(("127.0.0.1", 9001))
+        sock.close()
+        latency = (time.time() - start) * 1000
+        state["telemetry"]["network_latency"] = round(latency, 1)
+    except:
+        state["telemetry"]["network_latency"] = 0  # Local only
+
 
 def read_telemetry():
     """Read telemetry - first from C program's JSON, then fallback to psutil"""
@@ -254,27 +343,54 @@ def read_task_status():
         state["progress"] = 100
         if old_location != "completed":
             log_event("✅ Task Completed on Cloud")
+            log_timeline("complete", "Task finished on Cloud")
+            update_decision("Task completed successfully", "Complete")
     elif state["progress"] >= 100:
         state["location"] = "completed"
         if old_location != "completed":
             log_event("✅ Task Completed on Edge")
+            log_timeline("complete", "Task finished on Edge")
+            update_decision("Task completed successfully", "Complete")
     elif task_state_exists and not edge_return_exists:
         state["location"] = "cloud"
         if old_location == "edge":
             log_event("⚡ Migration: Edge → Cloud")
+            log_timeline("migrate_to_cloud", f"CPU: {state['telemetry']['cpu']}% - Offloading to Cloud")
+            update_decision(
+                f"CPU load {state['telemetry']['cpu']}% exceeded threshold (60%)",
+                "Migrate to Cloud",
+                cpu_forecast=min(100, state['telemetry']['cpu'] + 10)
+            )
+            state["migration_stats"]["total_migrations"] += 1
+            state["migration_stats"]["last_migration_time"] = datetime.now().strftime("%H:%M:%S")
+            state["migration_stats"]["last_transfer_size"] = 25  # KB estimate
+            state["migration_stats"]["last_downtime_ms"] = 50  # Estimate
+            add_task_output(f"[MIGRATE] Checkpointing at {state['progress']}%")
+            add_task_output(f"[MIGRATE] Sending state to Cloud...")
     elif edge_return_exists:
         state["location"] = "edge"
         if old_location == "cloud":
             log_event("⚡ Migration: Cloud → Edge")
+            log_timeline("migrate_to_edge", f"CPU: {state['telemetry']['cpu']}% - Returning to Edge")
+            update_decision(
+                f"Edge recovered (CPU {state['telemetry']['cpu']}% < 60%)",
+                "Return to Edge",
+                cpu_forecast=state['telemetry']['cpu']
+            )
+            state["migration_stats"]["total_migrations"] += 1
+            add_task_output(f"[RETURN] Task resuming on Edge at {state['progress']}%")
+            log_fault("✅ System self-healed - task returned to Edge")
     elif state["progress"] > 0:
         state["location"] = "edge"
+        update_decision("Running normally on Edge", "Continue", cpu_forecast=state['telemetry']['cpu'])
     elif both_stopped and not edge_telemetry_exists:
-        # Both processes stopped and no telemetry file = idle
         state["location"] = "idle"
         state["progress"] = 0
         state["task_name"] = None
-        # Reset telemetry to defaults
-        state["telemetry"] = {"cpu": 0, "mem": 0, "temp": None, "battery": None}
+        state["telemetry"] = {"cpu": 0, "mem": 0, "temp": None, "battery": None, "network_latency": 0}
+        state["decision"] = {"reason": "", "cpu_forecast": 0, "battery_trend": "stable", "network_status": "OK", "task_criticality": "Normal", "action": "None"}
+        state["migration_timeline"] = []
+        state["task_output"] = []
 
 
 def cleanup_files():
@@ -305,6 +421,8 @@ def background_monitor():
             read_telemetry()
             read_task_status()
             read_sensor_status()
+            update_cpu_history()
+            measure_network_latency()
             time.sleep(1)
         except Exception as e:
             print(f"Monitor error: {e}")
