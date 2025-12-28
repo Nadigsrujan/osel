@@ -141,8 +141,12 @@ def check_process_health():
 def read_task_status():
     """Enhanced task status with migration detection"""
     json_file = "/tmp/car_detect_internal.json"
+    edge_telemetry_file = "/tmp/edge_telemetry.json"
     
-    # Read progress
+    # First check process health
+    check_process_health()
+    
+    # Read progress from JSON
     if os.path.exists(json_file):
         try:
             with open(json_file, 'r') as f:
@@ -157,9 +161,6 @@ def read_task_status():
                         log_event(f"📊 Progress: {milestone}%")
         except Exception as e:
             pass
-    else:
-        if state["progress"] > 0 and state["location"] != "completed":
-            state["progress"] = 0
     
     # Detect location and migration
     old_location = state["location"]
@@ -167,11 +168,20 @@ def read_task_status():
     task_state_exists = os.path.exists("/tmp/task_state.bin")
     edge_return_exists = os.path.exists("/tmp/edge_return.bin")
     cloud_finished_exists = os.path.exists("/tmp/cloud_finished")
+    edge_telemetry_exists = os.path.exists(edge_telemetry_file)
+    
+    # Check if processes are running
+    both_stopped = not state["edge_running"] and not state["cloud_running"]
     
     if cloud_finished_exists:
         state["location"] = "completed"
+        state["progress"] = 100
         if old_location != "completed":
             log_event("✅ Task Completed on Cloud")
+    elif state["progress"] >= 100:
+        state["location"] = "completed"
+        if old_location != "completed":
+            log_event("✅ Task Completed on Edge")
     elif task_state_exists and not edge_return_exists:
         state["location"] = "cloud"
         if old_location == "edge":
@@ -180,16 +190,21 @@ def read_task_status():
         state["location"] = "edge"
         if old_location == "cloud":
             log_event("⚡ Migration: Cloud → Edge")
-    elif state["progress"] >= 100:
-        state["location"] = "completed"
-        if old_location != "completed":
-            log_event("✅ Task Completed on Edge")
     elif state["progress"] > 0:
         state["location"] = "edge"
-    elif not state["edge_running"] and not state["cloud_running"]:
+    elif both_stopped and not edge_telemetry_exists:
+        # Both processes stopped and no telemetry file = idle
         state["location"] = "idle"
+        state["progress"] = 0
+        state["task_name"] = None
+        # Reset telemetry to defaults
+        state["telemetry"] = {"cpu": 0, "mem": 0, "temp": None, "battery": None}
     
-    check_process_health()
+    # If completed and processes stopped, keep completed status but reset for next run after a delay
+    if state["location"] == "completed" and both_stopped:
+        # Keep completed for display but allow restart
+        pass
+
 
 def cleanup_files():
     """Clean up state files"""
@@ -200,7 +215,8 @@ def cleanup_files():
         "/tmp/cloud_finished",
         "/tmp/edge_ready",
         "/tmp/cloud_task_state.bin",
-        "/tmp/cloud_return.bin"
+        "/tmp/cloud_return.bin",
+        "/tmp/edge_telemetry.json"
     ]
     for f in files:
         try:
