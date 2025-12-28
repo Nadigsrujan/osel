@@ -47,7 +47,9 @@ state = {
     "cloud_running": False,
     "stress_pids": [],  # PIDs of 'yes' processes for demo
     "stress_started": False,  # Flag to start stress at 20%
-    "stress_stopped": False   # Flag to stop stress at 60%
+    "stress_stopped": False,  # Flag to stop stress at 60%
+    "sensor_status": None,    # Sensor status message
+    "sensor_message": ""      # Sensor status detail
 }
 
 def log_event(message):
@@ -159,6 +161,31 @@ def kill_stress_processes():
         pass
     state["stress_pids"] = []
 
+def read_sensor_status():
+    """Read sensor status from Python task"""
+    sensor_file = "/tmp/sensor_status.json"
+    if os.path.exists(sensor_file):
+        try:
+            with open(sensor_file, 'r') as f:
+                data = json.load(f)
+                old_status = state["sensor_status"]
+                state["sensor_status"] = data.get("status")
+                state["sensor_message"] = data.get("message", "")
+                
+                # Log significant changes
+                if old_status != state["sensor_status"]:
+                    if state["sensor_status"] == "detected":
+                        log_event("🚗 VEHICLE DETECTED by sensor!")
+                    elif state["sensor_status"] == "waiting":
+                        log_event("🔴 Waiting for vehicle trigger...")
+                    elif state["sensor_status"] == "connected":
+                        log_event(f"✅ Sensor connected: {state['sensor_message']}")
+        except:
+            pass
+    else:
+        state["sensor_status"] = None
+        state["sensor_message"] = ""
+
 def read_task_status():
     """Enhanced task status with migration detection"""
     json_file = "/tmp/car_detect_internal.json"
@@ -260,7 +287,9 @@ def cleanup_files():
         "/tmp/edge_ready",
         "/tmp/cloud_task_state.bin",
         "/tmp/cloud_return.bin",
-        "/tmp/edge_telemetry.json"
+        "/tmp/edge_telemetry.json",
+        "/tmp/sensor_status.json",
+        "/tmp/edge_cpu_status.json"
     ]
     for f in files:
         try:
@@ -275,6 +304,7 @@ def background_monitor():
         try:
             read_telemetry()
             read_task_status()
+            read_sensor_status()
             time.sleep(1)
         except Exception as e:
             print(f"Monitor error: {e}")

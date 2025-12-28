@@ -25,6 +25,13 @@ def save_internal_state(progress, result=None):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
+def save_sensor_status(status, message=""):
+    """Save sensor status for dashboard display"""
+    status_file = "/tmp/sensor_status.json"
+    data = {"status": status, "message": message}
+    with open(status_file, "w") as f:
+        json.dump(data, f)
+
 def load_internal_state():
     """Load previous state for resume after migration"""
     if os.path.exists(STATE_FILE):
@@ -43,9 +50,11 @@ def wait_for_hardware_trigger():
     """Wait for VEHICLE_DETECTED signal from NodeMCU/Arduino via serial"""
     if not SERIAL_AVAILABLE:
         if HARDWARE_REQUIRED:
+            save_sensor_status("error", "pyserial not installed")
             print("[ERROR] pyserial not installed. Cannot use hardware mode.")
             print("[ERROR] Install with: pip3 install pyserial")
             return False
+        save_sensor_status("demo", "Running in demo mode (no sensor)")
         print("[EDGE] No serial - starting immediately (demo mode)")
         return True
     
@@ -58,6 +67,7 @@ def wait_for_hardware_trigger():
     for port in ports:
         try:
             ser = serial.Serial(port, 9600, timeout=1)
+            save_sensor_status("connected", f"Sensor connected on {port}")
             print(f"[HARDWARE] ✅ Connected to {port}")
             break
         except:
@@ -65,12 +75,15 @@ def wait_for_hardware_trigger():
     
     if ser is None:
         if HARDWARE_REQUIRED:
+            save_sensor_status("error", "No sensor found!")
             print("[ERROR] No Arduino/NodeMCU found on any port!")
             print("[ERROR] Check USB connection and try: ls /dev/ttyUSB* /dev/cu.usb*")
             return False
+        save_sensor_status("demo", "No sensor found - demo mode")
         print("[WARN] No Arduino/NodeMCU found. Starting without trigger (demo mode).")
         return True
     
+    save_sensor_status("waiting", "🔴 Waiting for vehicle...")
     print("[EDGE] Waiting for sensor trigger...")
     print("[EDGE] Move object close to ultrasonic sensor (<20cm)")
     
@@ -80,6 +93,7 @@ def wait_for_hardware_trigger():
                 msg = ser.readline().decode('utf-8', errors='ignore').strip()
                 print(f"[SERIAL] Received: {msg}")
                 if "VEHICLE_DETECTED" in msg:
+                    save_sensor_status("detected", "🚗 VEHICLE DETECTED!")
                     print("[EDGE] ✅ Trigger received - starting computation!")
                     ser.close()
                     return True

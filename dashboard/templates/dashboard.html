@@ -388,6 +388,10 @@
                 <span>Cloud: <span id="cloud-status">Stopped</span></span>
             </div>
             <div class="info-item">
+                <span class="dot" id="sensor-dot"></span>
+                <span>Sensor: <span id="sensor-status">--</span></span>
+            </div>
+            <div class="info-item">
                 <span>Uptime: <span id="uptime">0s</span></span>
             </div>
             <div class="info-item">
@@ -541,6 +545,29 @@
                     document.getElementById('uptime').textContent = formatUptime(data.uptime);
                     document.getElementById('psutil-status').textContent =
                         data.psutil_available ? '✅' : '❌';
+
+                    // Update sensor status
+                    const sensorDot = document.getElementById('sensor-dot');
+                    const sensorStatus = document.getElementById('sensor-status');
+                    if (data.sensor_status === 'detected') {
+                        sensorDot.className = 'dot green';
+                        sensorStatus.textContent = '🚗 DETECTED!';
+                    } else if (data.sensor_status === 'waiting') {
+                        sensorDot.className = 'dot yellow';
+                        sensorStatus.textContent = '🔴 Waiting...';
+                    } else if (data.sensor_status === 'connected') {
+                        sensorDot.className = 'dot green';
+                        sensorStatus.textContent = '✅ Connected';
+                    } else if (data.sensor_status === 'demo') {
+                        sensorDot.className = 'dot yellow';
+                        sensorStatus.textContent = '📺 Demo Mode';
+                    } else if (data.sensor_status === 'error') {
+                        sensorDot.className = 'dot red';
+                        sensorStatus.textContent = '❌ Error';
+                    } else {
+                        sensorDot.className = 'dot';
+                        sensorStatus.textContent = '--';
+                    }
 
                     // Update button states
                     document.getElementById('btn-start').disabled =
