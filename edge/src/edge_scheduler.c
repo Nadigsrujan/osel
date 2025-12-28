@@ -116,6 +116,12 @@ int main(int argc, char *argv[]) {
             printf("[FINISH] Task completed on Edge!\n");
             printf("========================================\n");
             if (py_pid > 0) kill(py_pid, SIGKILL);
+            
+            // Cleanup state files
+            remove(json_file);
+            remove(state_file);
+            remove(return_file);
+            printf("[CLEANUP] State files removed.\n");
             return 0;
         }
 
@@ -135,10 +141,32 @@ int main(int argc, char *argv[]) {
             free(task); 
             task = NULL;
             
-            // Wait for return
-            printf("[WAIT] Waiting for Cloud to finish processing...\n");
+            // Wait for Cloud OR check if we've recovered
+            printf("[WAIT] Offloaded to Cloud. Monitoring for recovery...\n");
+            int recovery_signaled = 0;
             while (access(return_file, F_OK) != 0) {
-                printf("Edge: Waiting for Cloud...   \r");
+                // Check if Cloud finished without returning
+                if (access("/tmp/cloud_finished", F_OK) == 0) {
+                    remove("/tmp/cloud_finished");
+                    remove(json_file);
+                    printf("\n[DONE] Cloud completed task. No return needed.\n");
+                    return 0;
+                }
+                
+                // Check our own recovery status
+                system_metrics_t recovery_metrics;
+                collect_system_metrics(&recovery_metrics, 0); // No task running locally
+                
+                if (!recovery_signaled && recovery_metrics.cpu_load < 50.0) {
+                    // We've recovered! Signal Cloud
+                    printf("\n[RECOVERY] Edge recovered (CPU: %.1f%%). Signaling Cloud.\n", 
+                           recovery_metrics.cpu_load);
+                    FILE *sig = fopen("/tmp/edge_ready", "w");
+                    if (sig) fclose(sig);
+                    recovery_signaled = 1;
+                }
+                
+                printf("Edge: Waiting (CPU: %.1f%%)...   \r", recovery_metrics.cpu_load);
                 fflush(stdout);
                 sleep(2);
             }

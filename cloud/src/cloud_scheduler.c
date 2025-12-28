@@ -178,28 +178,42 @@ int main() {
                 printf("[FINISH] Task completed on Cloud!\n");
                 printf("========================================\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
+                
+                // Signal Edge that Cloud finished
+                FILE *sig = fopen("/tmp/cloud_finished", "w");
+                if (sig) fclose(sig);
+                
+                // Cleanup state files
+                remove(json_file);
+                remove(state_file);
+                remove(return_file);
+                remove("/tmp/edge_ready");
+                printf("[CLEANUP] State files removed.\n");
                 return 0;
             }
 
-            // Return to Edge at 80%
-            if (task->progress_counter >= 80) {
-                printf("[OFFLOAD] Heavy computation done. Returning to Edge.\n");
+            // Check if Edge has recovered and wants task back
+            // Edge creates /tmp/edge_ready signal when it recovers
+            if (access("/tmp/edge_ready", F_OK) == 0 && task->progress_counter < 95) {
+                printf("[SIGNAL] Edge has recovered. Returning task.\n");
+                remove("/tmp/edge_ready");
+                
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 py_pid = 0;
                 
                 save_checkpoint(return_file, task);
                 
-                // Send via network
                 if (send_return_state(return_file, edge_ip) < 0) {
-                    // Fallback to file
                     printf("[NET] Network return failed, using file fallback\n");
                     rename(return_file, "/tmp/edge_return.bin");
                 }
                 
                 free(task);
                 task = NULL;
-                printf("[WAIT] Task returned. Ready for next migration.\n\n");
+                printf("[WAIT] Task returned to Edge. Ready for next migration.\n\n");
             }
+            
+            // If no recovery signal, Cloud finishes the task completely
         }
 
         sleep(2);
