@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Edge-Cloud Migration Dashboard - Enhanced Version
+Edge-Cloud Migration Dashboard - Fixed Version
 Real-time monitoring and control panel with actual system telemetry
 """
 
@@ -10,6 +10,8 @@ import os
 import subprocess
 import threading
 import time
+import signal
+import sys
 from datetime import datetime
 
 try:
@@ -28,6 +30,9 @@ EDGE_BIN = os.path.join(PROJECT_PATH, "edge", "edge_runtime")
 
 # Start time for uptime calculation
 start_time = time.time()
+
+# Shutdown flag for graceful termination
+shutdown_flag = threading.Event()
 
 # State tracking
 state = {
@@ -76,8 +81,8 @@ def read_telemetry():
                 if "progress" in data:
                     state["progress"] = data["progress"]
                 return  # Got data from C program
-        except:
-            pass
+        except Exception as e:
+            print(f"Error reading telemetry file: {e}")
     
     # Fallback to psutil if C program not running
     if PSUTIL_AVAILABLE:
@@ -93,7 +98,7 @@ def read_telemetry():
                         if entries:
                             state["telemetry"]["temp"] = round(entries[0].current, 1)
                             break
-            except:
+            except (AttributeError, Exception):
                 state["telemetry"]["temp"] = None
             
             try:
@@ -102,7 +107,7 @@ def read_telemetry():
                     state["telemetry"]["battery"] = round(battery.percent, 1)
                 else:
                     state["telemetry"]["battery"] = None
-            except:
+            except (AttributeError, Exception):
                 state["telemetry"]["battery"] = None
                 
         except Exception as e:
@@ -113,7 +118,7 @@ def read_telemetry():
                 load = float(f.read().split()[0])
                 cores = os.cpu_count() or 1
                 state["telemetry"]["cpu"] = round(min(100, (load / cores) * 100), 1)
-        except:
+        except Exception:
             state["telemetry"]["cpu"] = 0
 
 
@@ -140,6 +145,19 @@ def check_process_health():
     
     state["edge_running"] = state["edge_pid"] is not None
     state["cloud_running"] = state["cloud_pid"] is not None
+
+def kill_stress_processes():
+    """Kill all stress test processes"""
+    for pid in state["stress_pids"]:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        subprocess.run(["pkill", "-9", "yes"], capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    state["stress_pids"] = []
 
 def read_task_status():
     """Enhanced task status with migration detection"""
@@ -171,31 +189,27 @@ def read_task_status():
                     state["stress_started"] = True
                     # Start 4 'yes' processes to spike CPU
                     for i in range(4):
-                        proc = subprocess.Popen(
-                            ["yes"],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL
-                        )
-                        state["stress_pids"].append(proc.pid)
-                    log_event(f"🔥 Started {len(state['stress_pids'])} stress processes")
+                        try:
+                            proc = subprocess.Popen(
+                                ["yes"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            state["stress_pids"].append(proc.pid)
+                        except Exception as e:
+                            print(f"Failed to start stress process: {e}")
+                    if state["stress_pids"]:
+                        log_event(f"🔥 Started {len(state['stress_pids'])} stress processes")
                 
                 # At 60%: Stop stress (lower CPU for Edge recovery)
                 if state["progress"] >= 60 and not state["stress_stopped"]:
                     log_event("❄️ Stopping CPU stress for demo...")
                     state["stress_stopped"] = True
-                    # Kill all stress processes
-                    for pid in state["stress_pids"]:
-                        try:
-                            os.kill(pid, 9)
-                        except:
-                            pass
-                    # Also kill any orphaned 'yes' processes
-                    subprocess.run(["pkill", "-9", "yes"], capture_output=True)
-                    state["stress_pids"] = []
+                    kill_stress_processes()
                     log_event("❄️ Stress processes stopped")
                     
         except Exception as e:
-            pass
+            print(f"Error reading task status: {e}")
     
     # Detect location and migration
     old_location = state["location"]
@@ -234,11 +248,6 @@ def read_task_status():
         state["task_name"] = None
         # Reset telemetry to defaults
         state["telemetry"] = {"cpu": 0, "mem": 0, "temp": None, "battery": None}
-    
-    # If completed and processes stopped, keep completed status but reset for next run after a delay
-    if state["location"] == "completed" and both_stopped:
-        # Keep completed for display but allow restart
-        pass
 
 
 def cleanup_files():
@@ -262,7 +271,7 @@ def cleanup_files():
 
 def background_monitor():
     """Background thread to continuously monitor status"""
-    while True:
+    while not shutdown_flag.is_set():
         try:
             read_telemetry()
             read_task_status()
@@ -270,6 +279,43 @@ def background_monitor():
         except Exception as e:
             print(f"Monitor error: {e}")
             time.sleep(5)
+
+def cleanup_on_exit():
+    """Clean up resources on exit"""
+    print("\n🛑 Shutting down gracefully...")
+    shutdown_flag.set()
+    
+    # Kill all managed processes
+    if PSUTIL_AVAILABLE:
+        for pid_name in ["edge_pid", "cloud_pid"]:
+            pid = state.get(pid_name)
+            if pid:
+                try:
+                    proc = psutil.Process(pid)
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except Exception:
+                    pass
+    
+    # Force kill if still running
+    try:
+        subprocess.run(["pkill", "-9", "-f", "edge_runtime"], capture_output=True, timeout=5)
+        subprocess.run(["pkill", "-9", "-f", "cloud_runtime"], capture_output=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    
+    kill_stress_processes()
+    cleanup_files()
+    print("✅ Cleanup complete")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    cleanup_on_exit()
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # Start background monitoring thread
 monitor_thread = threading.Thread(target=background_monitor, daemon=True)
@@ -302,6 +348,7 @@ def api_start():
     try:
         # Clean up old state
         cleanup_files()
+        kill_stress_processes()
         
         # Check if binaries exist
         if not os.path.exists(CLOUD_BIN):
@@ -320,7 +367,7 @@ def api_start():
             stderr=subprocess.DEVNULL
         )
         state["cloud_pid"] = cloud_proc.pid
-        time.sleep(1.5)
+        time.sleep(2)  # Increased wait time
         
         # Verify cloud started
         if cloud_proc.poll() is not None:
@@ -338,9 +385,14 @@ def api_start():
         state["edge_pid"] = edge_proc.pid
         
         # Verify edge started
-        time.sleep(0.5)
+        time.sleep(1)
         if edge_proc.poll() is not None:
             log_event("❌ Edge runtime failed to start")
+            # Clean up cloud process
+            try:
+                cloud_proc.terminate()
+            except Exception:
+                pass
             return jsonify({"error": "Edge runtime failed to start"}), 500
         
         state["location"] = "edge"
@@ -369,41 +421,32 @@ def api_stop():
         
         if PSUTIL_AVAILABLE:
             # Try graceful shutdown first (SIGTERM)
-            if state["edge_pid"]:
-                try:
-                    proc = psutil.Process(state["edge_pid"])
-                    proc.terminate()
-                    stopped.append("edge")
-                except:
-                    pass
-            
-            if state["cloud_pid"]:
-                try:
-                    proc = psutil.Process(state["cloud_pid"])
-                    proc.terminate()
-                    stopped.append("cloud")
-                except:
-                    pass
+            for pid_name, label in [("edge_pid", "edge"), ("cloud_pid", "cloud")]:
+                pid = state.get(pid_name)
+                if pid:
+                    try:
+                        proc = psutil.Process(pid)
+                        proc.terminate()
+                        stopped.append(label)
+                    except Exception:
+                        pass
             
             # Wait for graceful shutdown
             time.sleep(1)
         
         # Force kill if still running
-        subprocess.run(["pkill", "-9", "-f", "edge_runtime"], 
-                      capture_output=True, timeout=5)
-        subprocess.run(["pkill", "-9", "-f", "cloud_runtime"], 
-                      capture_output=True, timeout=5)
-        subprocess.run(["pkill", "-9", "-f", "car_detect.py"], 
-                      capture_output=True, timeout=5)
+        try:
+            subprocess.run(["pkill", "-9", "-f", "edge_runtime"], 
+                          capture_output=True, timeout=5)
+            subprocess.run(["pkill", "-9", "-f", "cloud_runtime"], 
+                          capture_output=True, timeout=5)
+            subprocess.run(["pkill", "-9", "-f", "car_detect.py"], 
+                          capture_output=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         
-        # Kill stress processes (yes commands)
-        for pid in state["stress_pids"]:
-            try:
-                os.kill(pid, 9)
-            except:
-                pass
-        subprocess.run(["pkill", "-9", "yes"], capture_output=True)
-        state["stress_pids"] = []
+        # Kill stress processes
+        kill_stress_processes()
         state["stress_started"] = False
         state["stress_stopped"] = False
         
@@ -441,7 +484,7 @@ def api_health():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("  🚀 Edge-Cloud Migration Dashboard (Enhanced)")
+    print("  🚀 Edge-Cloud Migration Dashboard (Fixed)")
     print("=" * 60)
     print(f"  📁 Project Path: {PROJECT_PATH}")
     print(f"  📊 psutil: {'✅ Available' if PSUTIL_AVAILABLE else '❌ Not installed'}")
@@ -452,4 +495,7 @@ if __name__ == '__main__':
         print("\n  ⚠️  For better telemetry, install psutil:")
         print("     pip3 install psutil\n")
     
-    app.run(host='0.0.0.0', port=5050, debug=False, threaded=True)
+    try:
+        app.run(host='0.0.0.0', port=5050, debug=False, threaded=True)
+    finally:
+        cleanup_on_exit()
