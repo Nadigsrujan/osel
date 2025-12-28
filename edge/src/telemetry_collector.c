@@ -110,8 +110,53 @@ static void simulate_metrics(system_metrics_t *m, int task_running) {
     }
 }
 
+// ESP8266 telemetry data
+typedef struct {
+    float temperature;
+    float humidity;
+    int light;
+    int rssi;
+    int stress;
+    int available;
+} esp_data_t;
+
+static esp_data_t esp_data = {0};
+
+// Read ESP8266 telemetry from file
+static void read_esp_telemetry() {
+    FILE *f = fopen("/tmp/esp_telemetry.json", "r");
+    if (!f) {
+        esp_data.available = 0;
+        return;
+    }
+    
+    char buf[512];
+    if (fgets(buf, sizeof(buf), f)) {
+        // Simple JSON parsing
+        sscanf(buf, "{\"temperature\":%f,\"humidity\":%f,\"light\":%d,\"rssi\":%d,\"stress\":%d",
+               &esp_data.temperature, &esp_data.humidity, 
+               &esp_data.light, &esp_data.rssi, &esp_data.stress);
+        esp_data.available = 1;
+    }
+    fclose(f);
+}
+
+// Get ESP8266 stress level (0-100)
+int get_esp_stress() {
+    read_esp_telemetry();
+    return esp_data.available ? esp_data.stress : 0;
+}
+
+// Get ESP8266 temperature
+float get_esp_temperature() {
+    return esp_data.available ? esp_data.temperature : -1;
+}
+
 // Main telemetry collection function
 int collect_system_metrics(system_metrics_t *metrics, int task_running) {
+    // Always try to read ESP8266 data
+    read_esp_telemetry();
+    
     if (is_linux()) {
         // REAL HARDWARE TELEMETRY
         metrics->cpu_load = read_cpu_load_linux();
@@ -119,15 +164,34 @@ int collect_system_metrics(system_metrics_t *metrics, int task_running) {
         metrics->battery_percent = read_battery_linux();
         metrics->cpu_temp = read_temp_linux();
         
+        // If ESP8266 temperature is available, use it as an override
+        if (esp_data.available && esp_data.temperature > 0) {
+            metrics->cpu_temp = esp_data.temperature;
+        }
+        
+        // Add ESP stress to CPU load
+        if (esp_data.available) {
+            metrics->cpu_load += esp_data.stress * 0.3; // 30% weight to ESP stress
+            if (metrics->cpu_load > 100) metrics->cpu_load = 100;
+        }
+        
         // Fallback if any reading fails
         if (metrics->cpu_load < 0) metrics->cpu_load = 50.0;
         if (metrics->memory_used < 0) metrics->memory_used = 50.0;
         
-        return 1; // Real data
+        return esp_data.available ? 2 : 1; // 2 = Real + ESP, 1 = Real only
     } else {
         // SIMULATION for macOS/Windows
         simulate_metrics(metrics, task_running);
-        return 0; // Simulated data
+        
+        // If ESP8266 is connected, use its data
+        if (esp_data.available) {
+            metrics->cpu_temp = esp_data.temperature;
+            metrics->cpu_load += esp_data.stress * 0.3;
+            if (metrics->cpu_load > 100) metrics->cpu_load = 100;
+        }
+        
+        return esp_data.available ? 2 : 0; // 2 = SIM + ESP, 0 = SIM only
     }
 }
 
@@ -137,8 +201,19 @@ void reset_telemetry_sim() {
 }
 
 // Pretty print metrics
-void print_metrics(system_metrics_t *m, int is_real) {
-    printf("[TELEMETRY%s] CPU:%.1f%% | MEM:%.1f%% | BAT:%d%% | TEMP:%.1f°C\n",
-           is_real ? "-REAL" : "-SIM",
-           m->cpu_load, m->memory_used, m->battery_percent, m->cpu_temp);
+void print_metrics(system_metrics_t *m, int mode) {
+    const char *mode_str;
+    switch(mode) {
+        case 0: mode_str = "-SIM"; break;
+        case 1: mode_str = "-REAL"; break;
+        case 2: mode_str = "-ESP"; break;
+        default: mode_str = ""; break;
+    }
+    printf("[TELEMETRY%s] CPU:%.1f%% | MEM:%.1f%% | BAT:%d%% | TEMP:%.1f°C",
+           mode_str, m->cpu_load, m->memory_used, m->battery_percent, m->cpu_temp);
+    
+    if (esp_data.available) {
+        printf(" | ESP:L=%d,S=%d%%", esp_data.light, esp_data.stress);
+    }
+    printf("\n");
 }
