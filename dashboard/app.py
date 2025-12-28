@@ -14,6 +14,11 @@ from datetime import datetime
 
 app = Flask(__name__)
 
+# Dynamic path detection - works on both Mac and Ubuntu
+PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLOUD_BIN = os.path.join(PROJECT_PATH, "cloud", "cloud_runtime")
+EDGE_BIN = os.path.join(PROJECT_PATH, "edge", "edge_runtime")
+
 # State tracking
 state = {
     "task_name": None,
@@ -81,8 +86,8 @@ def api_start():
     
     # Start cloud runtime in background
     cloud_proc = subprocess.Popen(
-        ["./cloud/cloud_runtime"],
-        cwd="/Users/nadigsrujan/Documents/osel",
+        [CLOUD_BIN],
+        cwd=PROJECT_PATH,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
@@ -91,8 +96,8 @@ def api_start():
     
     # Start edge runtime in background  
     edge_proc = subprocess.Popen(
-        ["./edge/edge_runtime"],
-        cwd="/Users/nadigsrujan/Documents/osel",
+        [EDGE_BIN],
+        cwd=PROJECT_PATH,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
@@ -130,6 +135,7 @@ def api_history():
 if __name__ == '__main__':
     print("=" * 50)
     print("  Edge-Cloud Migration Dashboard")
+    print(f"  Project Path: {PROJECT_PATH}")
     print("  Open http://localhost:5050 in your browser")
     print("=" * 50)
     app.run(host='0.0.0.0', port=5050, debug=False)
