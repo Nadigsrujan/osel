@@ -35,26 +35,40 @@ def load_internal_state():
             pass
     return {"progress": 0, "result": None}
 
+# Set to True to REQUIRE hardware trigger (won't auto-start)
+# Set to False to allow dashboard-based start without sensor
+HARDWARE_REQUIRED = False
+
 def wait_for_hardware_trigger():
     """Wait for VEHICLE_DETECTED signal from NodeMCU/Arduino via serial"""
     if not SERIAL_AVAILABLE:
-        print("[EDGE] No serial - starting immediately")
+        if HARDWARE_REQUIRED:
+            print("[ERROR] pyserial not installed. Cannot use hardware mode.")
+            print("[ERROR] Install with: pip3 install pyserial")
+            return False
+        print("[EDGE] No serial - starting immediately (demo mode)")
         return True
     
-    # Try common serial ports
-    ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', '/dev/tty.usbserial-0001']
+    # Try common serial ports (Linux and Mac)
+    ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', 
+             '/dev/cu.usbserial-0001', '/dev/cu.SLAB_USBtoUART',
+             '/dev/cu.wchusbserial1410']
     ser = None
     
     for port in ports:
         try:
             ser = serial.Serial(port, 9600, timeout=1)
-            print(f"[HARDWARE] Connected to {port}")
+            print(f"[HARDWARE] ✅ Connected to {port}")
             break
         except:
             continue
     
     if ser is None:
-        print("[WARN] No Arduino/NodeMCU found. Starting without trigger.")
+        if HARDWARE_REQUIRED:
+            print("[ERROR] No Arduino/NodeMCU found on any port!")
+            print("[ERROR] Check USB connection and try: ls /dev/ttyUSB* /dev/cu.usb*")
+            return False
+        print("[WARN] No Arduino/NodeMCU found. Starting without trigger (demo mode).")
         return True
     
     print("[EDGE] Waiting for sensor trigger...")
