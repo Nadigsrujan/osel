@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
                 if (cpu_file) {
                     fprintf(cpu_file, "{\"cpu\": %.1f, \"recovered\": %d}", 
                             edge_metrics.cpu_load, 
-                            edge_metrics.cpu_load < 50.0 ? 1 : 0);
+                            edge_metrics.cpu_load < 60.0 ? 1 : 0);
                     fclose(cpu_file);
                 }
                 
