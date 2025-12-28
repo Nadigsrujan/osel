@@ -39,7 +39,10 @@ state = {
     "edge_pid": None,
     "cloud_pid": None,
     "edge_running": False,
-    "cloud_running": False
+    "cloud_running": False,
+    "stress_pids": [],  # PIDs of 'yes' processes for demo
+    "stress_started": False,  # Flag to start stress at 20%
+    "stress_stopped": False   # Flag to stop stress at 60%
 }
 
 def log_event(message):
@@ -159,6 +162,38 @@ def read_task_status():
                 for milestone in [25, 50, 75, 100]:
                     if old_progress < milestone <= state["progress"]:
                         log_event(f"📊 Progress: {milestone}%")
+                
+                # === DEMO MODE: CPU Stress Automation ===
+                
+                # At 20%: Start stress (spike CPU to trigger migration)
+                if state["progress"] >= 20 and not state["stress_started"]:
+                    log_event("🔥 Starting CPU stress for demo...")
+                    state["stress_started"] = True
+                    # Start 4 'yes' processes to spike CPU
+                    for i in range(4):
+                        proc = subprocess.Popen(
+                            ["yes"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        state["stress_pids"].append(proc.pid)
+                    log_event(f"🔥 Started {len(state['stress_pids'])} stress processes")
+                
+                # At 60%: Stop stress (lower CPU for Edge recovery)
+                if state["progress"] >= 60 and not state["stress_stopped"]:
+                    log_event("❄️ Stopping CPU stress for demo...")
+                    state["stress_stopped"] = True
+                    # Kill all stress processes
+                    for pid in state["stress_pids"]:
+                        try:
+                            os.kill(pid, 9)
+                        except:
+                            pass
+                    # Also kill any orphaned 'yes' processes
+                    subprocess.run(["pkill", "-9", "yes"], capture_output=True)
+                    state["stress_pids"] = []
+                    log_event("❄️ Stress processes stopped")
+                    
         except Exception as e:
             pass
     
@@ -310,6 +345,10 @@ def api_start():
         
         state["location"] = "edge"
         state["progress"] = 0
+        # Reset demo mode flags
+        state["stress_started"] = False
+        state["stress_stopped"] = False
+        state["stress_pids"] = []
         log_event("✅ Task started on Edge")
         
         return jsonify({
@@ -356,6 +395,17 @@ def api_stop():
                       capture_output=True, timeout=5)
         subprocess.run(["pkill", "-9", "-f", "car_detect.py"], 
                       capture_output=True, timeout=5)
+        
+        # Kill stress processes (yes commands)
+        for pid in state["stress_pids"]:
+            try:
+                os.kill(pid, 9)
+            except:
+                pass
+        subprocess.run(["pkill", "-9", "yes"], capture_output=True)
+        state["stress_pids"] = []
+        state["stress_started"] = False
+        state["stress_stopped"] = False
         
         cleanup_files()
         
