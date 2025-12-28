@@ -18,4 +18,7 @@ void reset_telemetry_sim(void);
 // Print metrics to console
 void print_metrics(system_metrics_t *m, int is_real);
 
+// Write telemetry to JSON file for dashboard
+void write_telemetry_json(system_metrics_t *m, const char *location, int progress);
+
 #endif

@@ -217,3 +217,13 @@ void print_metrics(system_metrics_t *m, int mode) {
     }
     printf("\n");
 }
+
+// Write telemetry to JSON file for dashboard
+void write_telemetry_json(system_metrics_t *m, const char *location, int progress) {
+    FILE *f = fopen("/tmp/edge_telemetry.json", "w");
+    if (f) {
+        fprintf(f, "{\"cpu\": %.1f, \"mem\": %.1f, \"temp\": %.1f, \"battery\": %d, \"location\": \"%s\", \"progress\": %d}",
+                m->cpu_load, m->memory_used, m->cpu_temp, m->battery_percent, location, progress);
+        fclose(f);
+    }
+}

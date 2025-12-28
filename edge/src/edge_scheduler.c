@@ -14,7 +14,7 @@
 #define TEMP_THRESHOLD 80.0
 #define PROGRESS_NO_MIGRATE 75
 
-// Migration decision based on real metrics
+// Migration decision based on metrics
 int should_migrate(system_metrics_t *m, int progress) {
     if (progress > PROGRESS_NO_MIGRATE) return 0; // Too close to finish
     
@@ -71,6 +71,7 @@ int main(int argc, char *argv[]) {
             fprintf(f, "{\"progress\": %d}", task->progress_counter);
             fclose(f);
             remove(return_file);
+            remove(state_file);
             py_pid = 0;
             reset_telemetry_sim();
         }
@@ -94,7 +95,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // 4. Collect REAL telemetry
+        // 4. Collect telemetry
         is_real_telemetry = collect_system_metrics(&metrics, py_pid > 0);
         
         // Sync progress from JSON
@@ -106,9 +107,12 @@ int main(int argc, char *argv[]) {
             fclose(pf);
         }
 
-        // 5. Display status
+        // 5. Display status and write to file for dashboard
         print_metrics(&metrics, is_real_telemetry);
         printf("[TASK] %s: %d%%\n", task->state_label, task->progress_counter);
+        
+        // Write telemetry JSON for dashboard
+        write_telemetry_json(&metrics, "edge", task->progress_counter);
 
         // 6. Check completion
         if (task->progress_counter >= 100) {
@@ -117,10 +121,14 @@ int main(int argc, char *argv[]) {
             printf("========================================\n");
             if (py_pid > 0) kill(py_pid, SIGKILL);
             
+            // Write final state for dashboard
+            write_telemetry_json(&metrics, "completed", 100);
+            
             // Cleanup state files
             remove(json_file);
             remove(state_file);
             remove(return_file);
+            remove("/tmp/edge_telemetry.json");
             printf("[CLEANUP] State files removed.\n");
             return 0;
         }
@@ -130,6 +138,9 @@ int main(int argc, char *argv[]) {
             printf("\n[MIGRATE] Triggering migration to Cloud...\n");
             if (py_pid > 0) kill(py_pid, SIGKILL);
             py_pid = 0;
+            
+            // Write migration state for dashboard
+            write_telemetry_json(&metrics, "migrating", task->progress_counter);
             
             save_checkpoint(state_file, task);
             
@@ -141,34 +152,30 @@ int main(int argc, char *argv[]) {
             free(task); 
             task = NULL;
             
-            // Wait for Cloud OR check if we've recovered
-            printf("[WAIT] Offloaded to Cloud. Monitoring for recovery...\n");
-            int recovery_signaled = 0;
+            // Wait for return
+            printf("[WAIT] Offloaded to Cloud. Waiting for return...\n");
+            
+            int wait_count = 0;
             while (access(return_file, F_OK) != 0) {
                 // Check if Cloud finished without returning
                 if (access("/tmp/cloud_finished", F_OK) == 0) {
                     remove("/tmp/cloud_finished");
                     remove(json_file);
-                    printf("\n[DONE] Cloud completed task. No return needed.\n");
+                    remove("/tmp/edge_telemetry.json");
+                    printf("\n[DONE] Cloud completed task.\n");
                     return 0;
                 }
                 
-                // Check our own recovery status
-                system_metrics_t recovery_metrics;
-                collect_system_metrics(&recovery_metrics, 0); // No task running locally
-                
-                if (!recovery_signaled && recovery_metrics.cpu_load < 50.0) {
-                    // We've recovered! Signal Cloud
-                    printf("\n[RECOVERY] Edge recovered (CPU: %.1f%%). Signaling Cloud.\n", 
-                           recovery_metrics.cpu_load);
-                    FILE *sig = fopen("/tmp/edge_ready", "w");
-                    if (sig) fclose(sig);
-                    recovery_signaled = 1;
-                }
-                
-                printf("Edge: Waiting (CPU: %.1f%%)...   \r", recovery_metrics.cpu_load);
+                wait_count++;
+                printf("Edge: Waiting for Cloud... (%ds)\r", wait_count * 2);
                 fflush(stdout);
                 sleep(2);
+                
+                // Timeout after 120 seconds
+                if (wait_count > 60) {
+                    printf("\n[TIMEOUT] Cloud not responding. Exiting.\n");
+                    return 1;
+                }
             }
             printf("\n");
             continue;

@@ -55,17 +55,34 @@ def log_event(message):
     print(f"[{event['time']}] {message}")
 
 def read_telemetry():
-    """Read real system telemetry using psutil"""
+    """Read telemetry - first from C program's JSON, then fallback to psutil"""
+    edge_telemetry_file = "/tmp/edge_telemetry.json"
+    
+    # First try to read from Edge runtime's telemetry file
+    if os.path.exists(edge_telemetry_file):
+        try:
+            with open(edge_telemetry_file, 'r') as f:
+                data = json.load(f)
+                state["telemetry"]["cpu"] = round(data.get("cpu", 0), 1)
+                state["telemetry"]["mem"] = round(data.get("mem", 0), 1)
+                state["telemetry"]["temp"] = data.get("temp")
+                state["telemetry"]["battery"] = data.get("battery")
+                # Also get location and progress from C program
+                if "location" in data:
+                    state["location"] = data["location"]
+                if "progress" in data:
+                    state["progress"] = data["progress"]
+                return  # Got data from C program
+        except:
+            pass
+    
+    # Fallback to psutil if C program not running
     if PSUTIL_AVAILABLE:
         try:
-            # CPU usage
             state["telemetry"]["cpu"] = round(psutil.cpu_percent(interval=0.1), 1)
-            
-            # Memory usage
             mem = psutil.virtual_memory()
             state["telemetry"]["mem"] = round(mem.percent, 1)
             
-            # Temperature (platform-dependent)
             try:
                 temps = psutil.sensors_temperatures()
                 if temps:
@@ -76,7 +93,6 @@ def read_telemetry():
             except:
                 state["telemetry"]["temp"] = None
             
-            # Battery (if available)
             try:
                 battery = psutil.sensors_battery()
                 if battery:
@@ -89,7 +105,6 @@ def read_telemetry():
         except Exception as e:
             print(f"Telemetry error: {e}")
     else:
-        # Fallback: try reading from /proc (Linux)
         try:
             with open('/proc/loadavg', 'r') as f:
                 load = float(f.read().split()[0])
@@ -97,6 +112,7 @@ def read_telemetry():
                 state["telemetry"]["cpu"] = round(min(100, (load / cores) * 100), 1)
         except:
             state["telemetry"]["cpu"] = 0
+
 
 def check_process_health():
     """Check if edge/cloud processes are still alive"""
