@@ -30,7 +30,7 @@ def process(img_path, start_step=0):
     for step in range(start_step, 10):
         save_internal_state(step * 10) 
         print(f"[COMPUTE] Executing Inference Stage {step+1}/10...")
-        time.sleep(1.5) # Realistic heavy processing
+        time.sleep(3)  # Slower processing - 3 seconds per step
 
 
     final_result = len(car_cascade.detectMultiScale(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 1.1, 3))
