@@ -19,21 +19,41 @@ static int is_linux() {
 #endif
 }
 
-// Read CPU load from /proc/loadavg (Linux)
+// Read instant CPU usage from /proc/stat (Linux)
+// Returns percentage 0-100
 static float read_cpu_load_linux() {
-    FILE *f = fopen("/proc/loadavg", "r");
+    static long prev_idle = 0, prev_total = 0;
+    
+    FILE *f = fopen("/proc/stat", "r");
     if (!f) return -1;
     
-    float load1, load5, load15;
-    fscanf(f, "%f %f %f", &load1, &load5, &load15);
+    char line[256];
+    if (!fgets(line, sizeof(line), f)) {
+        fclose(f);
+        return -1;
+    }
     fclose(f);
     
-    // Get number of CPU cores
-    int cores = sysconf(_SC_NPROCESSORS_ONLN);
-    if (cores < 1) cores = 1;
+    // Parse: cpu user nice system idle iowait irq softirq
+    long user, nice, system, idle, iowait, irq, softirq;
+    sscanf(line, "cpu %ld %ld %ld %ld %ld %ld %ld", 
+           &user, &nice, &system, &idle, &iowait, &irq, &softirq);
     
-    // Convert load average to percentage (load/cores * 100)
-    float percent = (load1 / cores) * 100.0;
+    long total = user + nice + system + idle + iowait + irq + softirq;
+    long idle_time = idle + iowait;
+    
+    // Calculate difference from last reading
+    long total_diff = total - prev_total;
+    long idle_diff = idle_time - prev_idle;
+    
+    prev_total = total;
+    prev_idle = idle_time;
+    
+    if (total_diff == 0) return 0;
+    
+    // CPU usage = (total - idle) / total * 100
+    float percent = ((float)(total_diff - idle_diff) / total_diff) * 100.0;
+    if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     
     return percent;
