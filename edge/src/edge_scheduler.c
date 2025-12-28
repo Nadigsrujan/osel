@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
             py_pid = 0;
             
             // Write migration state for dashboard
-            write_telemetry_json(&metrics, "migrating", task->progress_counter);
+            write_telemetry_json(&metrics, "cloud", task->progress_counter);
             
             save_checkpoint(state_file, task);
             
@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
             free(task); 
             task = NULL;
             
-            // Wait for return
+            // Wait for return - continuously write Edge's CPU status for Cloud to check
             printf("[WAIT] Offloaded to Cloud. Waiting for return...\n");
             
             int wait_count = 0;
@@ -162,21 +162,38 @@ int main(int argc, char *argv[]) {
                     remove("/tmp/cloud_finished");
                     remove(json_file);
                     remove("/tmp/edge_telemetry.json");
+                    remove("/tmp/edge_cpu_status.json");
                     printf("\n[DONE] Cloud completed task.\n");
                     return 0;
                 }
                 
+                // Continuously write Edge's current CPU status for Cloud to read
+                system_metrics_t edge_metrics;
+                collect_system_metrics(&edge_metrics, 0);
+                
+                FILE *cpu_file = fopen("/tmp/edge_cpu_status.json", "w");
+                if (cpu_file) {
+                    fprintf(cpu_file, "{\"cpu\": %.1f, \"recovered\": %d}", 
+                            edge_metrics.cpu_load, 
+                            edge_metrics.cpu_load < 50.0 ? 1 : 0);
+                    fclose(cpu_file);
+                }
+                
                 wait_count++;
-                printf("Edge: Waiting for Cloud... (%ds)\r", wait_count * 2);
+                printf("Edge: Waiting (CPU: %.1f%%) [%ds]\r", edge_metrics.cpu_load, wait_count * 2);
                 fflush(stdout);
                 sleep(2);
                 
                 // Timeout after 120 seconds
                 if (wait_count > 60) {
                     printf("\n[TIMEOUT] Cloud not responding. Exiting.\n");
+                    remove("/tmp/edge_cpu_status.json");
                     return 1;
                 }
             }
+            
+            // Cleanup status file
+            remove("/tmp/edge_cpu_status.json");
             printf("\n");
             continue;
         }

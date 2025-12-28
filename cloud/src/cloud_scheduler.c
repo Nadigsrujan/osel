@@ -192,28 +192,52 @@ int main() {
                 return 0;
             }
 
-            // Check if Edge has recovered and wants task back
-            // Edge creates /tmp/edge_ready signal when it recovers
-            if (access("/tmp/edge_ready", F_OK) == 0 && task->progress_counter < 95) {
-                printf("[SIGNAL] Edge has recovered. Returning task.\n");
+            // Check if Edge has recovered by reading its CPU status
+            int edge_recovered = 0;
+            float edge_cpu = 100.0;
+            
+            // Method 1: Check edge_ready signal file
+            if (access("/tmp/edge_ready", F_OK) == 0) {
+                edge_recovered = 1;
                 remove("/tmp/edge_ready");
+                printf("[SIGNAL] Edge signaled recovery.\n");
+            }
+            
+            // Method 2: Read Edge's CPU status file
+            FILE *cpu_file = fopen("/tmp/edge_cpu_status.json", "r");
+            if (cpu_file) {
+                char buf[128];
+                if (fgets(buf, sizeof(buf), cpu_file)) {
+                    int recovered_flag = 0;
+                    sscanf(buf, "{\"cpu\": %f, \"recovered\": %d}", &edge_cpu, &recovered_flag);
+                    if (recovered_flag) {
+                        edge_recovered = 1;
+                    }
+                }
+                fclose(cpu_file);
+                printf("[CLOUD] Edge CPU: %.1f%% | Recovered: %s\n", 
+                       edge_cpu, edge_recovered ? "YES" : "NO");
+            }
+            
+            // Return task to Edge if recovered and not too close to completion
+            if (edge_recovered && task->progress_counter < 90) {
+                printf("[RETURN] Edge recovered (CPU: %.1f%%). Returning task.\n", edge_cpu);
                 
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 py_pid = 0;
                 
                 save_checkpoint(return_file, task);
                 
-                if (send_return_state(return_file, edge_ip) < 0) {
-                    printf("[NET] Network return failed, using file fallback\n");
-                    rename(return_file, "/tmp/edge_return.bin");
-                }
+                // Always use file for reliability
+                rename(return_file, "/tmp/edge_return.bin");
+                printf("[TRANSFER] Task returned to Edge at %d%%\n", task->progress_counter);
                 
                 free(task);
                 task = NULL;
-                printf("[WAIT] Task returned to Edge. Ready for next migration.\n\n");
+                printf("[WAIT] Ready for next migration.\n\n");
             }
             
-            // If no recovery signal, Cloud finishes the task completely
+            // If no recovery, Cloud continues processing
         }
 
         sleep(2);
