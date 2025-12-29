@@ -14,20 +14,13 @@
 #define TEMP_THRESHOLD 80.0
 #define PROGRESS_NO_MIGRATE 95
 
-// Migration decision based on metrics
+// Migration decision based on HARDWARE triggers
 int should_migrate(system_metrics_t *m, int progress) {
-    if (progress > PROGRESS_NO_MIGRATE) return 0; // Too close to finish
+    if (progress > PROGRESS_NO_MIGRATE) return 0; 
     
-    if (m->cpu_load > CPU_THRESHOLD) {
-        printf("[DECISION] CPU %.1f%% > %.1f%% threshold\n", m->cpu_load, CPU_THRESHOLD);
-        return 1;
-    }
-    if (m->battery_percent > 0 && m->battery_percent < BATTERY_THRESHOLD) {
-        printf("[DECISION] Battery %d%% < %d%% threshold\n", m->battery_percent, BATTERY_THRESHOLD);
-        return 1;
-    }
-    if (m->cpu_temp > TEMP_THRESHOLD) {
-        printf("[DECISION] Temperature %.1f°C > %.1f°C threshold\n", m->cpu_temp, TEMP_THRESHOLD);
+    // NEW: Check for Hardware Hazard File
+    if (access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
+        printf("[HAZARD] Hardware sensor triggered migration!\n");
         return 1;
     }
     return 0;

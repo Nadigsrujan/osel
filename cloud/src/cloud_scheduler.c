@@ -152,10 +152,10 @@ int main() {
 
         // 2. Launch Python process
         if (task && py_pid == 0) {
-            printf("[EXEC] Launching AI inference on Cloud...\n");
+            printf("[EXEC] Launching Panel Monitoring on Cloud...\n");
             py_pid = fork();
             if (py_pid == 0) {
-                execlp("python3", "python3", "tasks/car_detect.py", task->payload_path, NULL);
+                execlp("python3", "python3", "tasks/panel_monitor.py", NULL);
                 exit(0);
             }
         }
@@ -192,36 +192,16 @@ int main() {
                 return 0;
             }
 
-            // Check if Edge has recovered by reading its CPU status
             int edge_recovered = 0;
-            float edge_cpu = 100.0;
-            
-            // Method 1: Check edge_ready signal file
-            if (access("/tmp/edge_ready", F_OK) == 0) {
+            // NEW Method: Check if Hardware Hazard is cleared
+            if (access("/tmp/SENSOR_HAZARD", F_OK) != 0) {
                 edge_recovered = 1;
-                remove("/tmp/edge_ready");
-                printf("[SIGNAL] Edge signaled recovery.\n");
-            }
-            
-            // Method 2: Read Edge's CPU status file
-            FILE *cpu_file = fopen("/tmp/edge_cpu_status.json", "r");
-            if (cpu_file) {
-                char buf[128];
-                if (fgets(buf, sizeof(buf), cpu_file)) {
-                    int recovered_flag = 0;
-                    sscanf(buf, "{\"cpu\": %f, \"recovered\": %d}", &edge_cpu, &recovered_flag);
-                    if (recovered_flag) {
-                        edge_recovered = 1;
-                    }
-                }
-                fclose(cpu_file);
-                printf("[CLOUD] Edge CPU: %.1f%% | Recovered: %s\n", 
-                       edge_cpu, edge_recovered ? "YES" : "NO");
+                printf("[RECOVERY] Sensor hazard cleared. Returning task to Edge.\n");
             }
             
             // Return task to Edge if recovered and not too close to completion
             if (edge_recovered && task->progress_counter < 90) {
-                printf("[RETURN] Edge recovered (CPU: %.1f%%). Returning task.\n", edge_cpu);
+                printf("[RETURN] Returning task to Edge.\n");
                 
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 py_pid = 0;

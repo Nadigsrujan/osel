@@ -251,31 +251,71 @@ def kill_stress_processes():
         pass
     state["stress_pids"] = []
 
-def read_sensor_status():
-    """Read sensor status from Python task"""
-    sensor_file = "/tmp/sensor_status.json"
-    if os.path.exists(sensor_file):
+# Global Serial for Watchdog
+ser_watchdog = None
+
+def serial_watchdog_thread():
+    """Permanent background thread to listen to Arduino and manage migration triggers"""
+    global ser_watchdog
+    print("[SERVER] Starting Hardware Watchdog Thread...")
+    
+    ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', '/dev/cu.usbserial-0001']
+    hazard_file = "/tmp/SENSOR_HAZARD"
+    
+    while not shutdown_flag.is_set():
+        if ser_watchdog is None:
+            for port in ports:
+                try:
+                    import serial
+                    ser_watchdog = serial.Serial(port, 9600, timeout=1)
+                    log_event(f"🔌 Serial Watchdog connected to {port}")
+                    break
+                except: continue
+            if ser_watchdog is None:
+                time.sleep(5)
+                continue
+
         try:
-            with open(sensor_file, 'r') as f:
-                data = json.load(f)
-                old_status = state["sensor_status"]
-                state["sensor_status"] = data.get("status")
-                state["sensor_message"] = data.get("message", "")
-                state["sensor_data"] = data.get("sensor_data", {"T": 0, "D": 0, "L": 0})
+            if ser_watchdog.in_waiting > 0:
+                line = ser_watchdog.readline().decode('utf-8', errors='ignore').strip()
                 
-                # Log significant changes
-                if old_status != state["sensor_status"]:
-                    if state["sensor_status"] == "detected":
-                        log_event("⚠️ PANEL HAZARD DETECTED!")
-                    elif state["sensor_status"] == "waiting":
-                        log_event("🔴 Panel Monitoring: Active")
-                    elif state["sensor_status"] == "connected":
-                        log_event(f"✅ Sensor connected: {state['sensor_message']}")
-        except:
-            pass
-    else:
-        state["sensor_status"] = None
-        state["sensor_message"] = ""
+                # Parse metrics for dashboard
+                if "T=" in line and "D=" in line:
+                    data = {}
+                    parts = line.split(',')
+                    for p in parts:
+                        if '=' in p:
+                            k, v = p.split('=')
+                            data[k] = float(v)
+                    
+                    # Update global sensor state
+                    state["sensor_data"] = data
+                    
+                    if "MIGRATE" in line:
+                        state["sensor_status"] = "detected"
+                        state["sensor_message"] = "⚠️ HAZARD DETECTED"
+                        # Create physical trigger for C schedulers
+                        if not os.path.exists(hazard_file):
+                            with open(hazard_file, "w") as f: f.write("1")
+                    else:
+                        state["sensor_status"] = "waiting"
+                        state["sensor_message"] = "🟢 System Safe"
+                        # Remove trigger
+                        if os.path.exists(hazard_file):
+                            os.remove(hazard_file)
+
+        except Exception as e:
+            print(f"[WATCHDOG ERROR] {e}")
+            ser_watchdog = None
+            time.sleep(2)
+        time.sleep(0.1)
+
+# Start the watchdog immediately
+threading.Thread(target=serial_watchdog_thread, daemon=True).start()
+
+def read_sensor_status():
+    """Now handled by watchdog, but kept for UI sync if needed"""
+    pass
 
 def read_task_status():
     """Enhanced task status with migration detection"""
@@ -302,10 +342,8 @@ def read_task_status():
                 if "severity_score" in data:
                     state["decision"]["reason"] = f"Severity: {data['severity_score']} ({data.get('status', '')})"
                 
-                # Log progress milestones
-                for milestone in [25, 50, 75, 100]:
-                    if old_progress < milestone <= state["progress"]:
-                        log_event(f"📊 Progress: {milestone}%")
+                # No more progress milestones or demo stress logic
+                pass
                 
                 # Read raw logs for window
                 log_file = "/tmp/task_logs.log"
@@ -316,31 +354,6 @@ def read_task_status():
                             if line.strip() not in str(state["task_output"]):
                                 add_task_output(line.strip())
                 
-                # At 20%: Start stress (spike CPU to trigger migration)
-                if state["progress"] >= 20 and not state["stress_started"]:
-                    log_event("🔥 Starting CPU stress for demo...")
-                    state["stress_started"] = True
-                    # Start 4 'yes' processes to spike CPU
-                    for i in range(4):
-                        try:
-                            proc = subprocess.Popen(
-                                ["yes"],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            state["stress_pids"].append(proc.pid)
-                        except Exception as e:
-                            print(f"Failed to start stress process: {e}")
-                    if state["stress_pids"]:
-                        log_event(f"🔥 Started {len(state['stress_pids'])} stress processes")
-                
-                # At 60%: Stop stress (lower CPU for Edge recovery)
-                if state["progress"] >= 60 and not state["stress_stopped"]:
-                    log_event("❄️ Stopping CPU stress for demo...")
-                    state["stress_stopped"] = True
-                    kill_stress_processes()
-                    log_event("❄️ Stress processes stopped")
-                    
         except Exception as e:
             print(f"Error reading task status: {e}")
     
