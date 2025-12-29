@@ -307,7 +307,14 @@ def read_task_status():
                     if old_progress < milestone <= state["progress"]:
                         log_event(f"📊 Progress: {milestone}%")
                 
-                # === DEMO MODE: CPU Stress Automation ===
+                # Read raw logs for window
+                log_file = "/tmp/task_logs.log"
+                if os.path.exists(log_file):
+                    with open(log_file, 'r') as lf:
+                        lines = lf.readlines()[-10:] # Last 10 lines
+                        for line in lines:
+                            if line.strip() not in str(state["task_output"]):
+                                add_task_output(line.strip())
                 
                 # At 20%: Start stress (spike CPU to trigger migration)
                 if state["progress"] >= 20 and not state["stress_started"]:

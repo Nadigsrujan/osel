@@ -68,11 +68,16 @@ def wait_for_hazard():
                     # Update status for dashboard display
                     if "EDGE_OK" in line:
                         save_panel_status("waiting", "🔴 System Normal", data)
+                        # LOG TO FILE for dashboard debugging
+                        with open("/tmp/task_logs.log", "a") as logf:
+                            logf.write(f"[SERIAL] {line}\n")
                     
                     # Hazard Trigger
                     if "MIGRATE" in line:
                         print(f"[HAZARD] {line}")
-                        save_panel_status("detected", "⚠️ HAZARD DETECTED!", data)
+                        save_panel_status("detected", "⚠️ PANEL HAZARD DETECTED!", data)
+                        with open("/tmp/task_logs.log", "a") as logf:
+                            logf.write(f"⚠️ HAZARD: {line}\n")
                         ser.close()
                         return data
             time.sleep(0.05)
