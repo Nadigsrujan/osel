@@ -9,10 +9,10 @@
 #include "../include/network_transfer.h"
 
 // Configuration
-#define CPU_THRESHOLD 60.0
+#define CPU_THRESHOLD 10.0
 #define BATTERY_THRESHOLD 15
 #define TEMP_THRESHOLD 80.0
-#define PROGRESS_NO_MIGRATE 75
+#define PROGRESS_NO_MIGRATE 95
 
 // Migration decision based on metrics
 int should_migrate(system_metrics_t *m, int progress) {
