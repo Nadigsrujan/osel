@@ -129,6 +129,21 @@ def add_task_output(line):
     if len(state["task_output"]) > 50:
         state["task_output"] = state["task_output"][-50:]
 
+def save_panel_status(status, message, data=None):
+    """Write panel sensor status to file for syncing with tasks"""
+    status_file = "/tmp/sensor_status.json"
+    status_data = {
+        "status": status,
+        "message": message,
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "sensor_data": data or {"T": 0, "D": 0, "L": 0}
+    }
+    try:
+        with open(status_file, 'w') as f:
+            json.dump(status_data, f)
+    except Exception as e:
+        print(f"Error saving sensor status: {e}")
+
 def update_cpu_history():
     """Track CPU/Memory history for graphs"""
     state["cpu_history"].append(state["telemetry"]["cpu"])
