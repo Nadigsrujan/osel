@@ -50,6 +50,7 @@ state = {
     "stress_stopped": False,
     "sensor_status": None,
     "sensor_message": "",
+    "sensor_data": {"T": 0, "D": 0, "L": 0}, # Panel Metrics
     # NEW: Decision Engine
     "decision": {
         "reason": "",
@@ -260,13 +261,14 @@ def read_sensor_status():
                 old_status = state["sensor_status"]
                 state["sensor_status"] = data.get("status")
                 state["sensor_message"] = data.get("message", "")
+                state["sensor_data"] = data.get("sensor_data", {"T": 0, "D": 0, "L": 0})
                 
                 # Log significant changes
                 if old_status != state["sensor_status"]:
                     if state["sensor_status"] == "detected":
-                        log_event("🚗 VEHICLE DETECTED by sensor!")
+                        log_event("⚠️ PANEL HAZARD DETECTED!")
                     elif state["sensor_status"] == "waiting":
-                        log_event("🔴 Waiting for vehicle trigger...")
+                        log_event("🔴 Panel Monitoring: Active")
                     elif state["sensor_status"] == "connected":
                         log_event(f"✅ Sensor connected: {state['sensor_message']}")
         except:
@@ -290,7 +292,11 @@ def read_task_status():
                 data = json.load(f)
                 old_progress = state["progress"]
                 state["progress"] = data.get("progress", 0)
-                state["task_name"] = "car_detect"
+                state["task_name"] = data.get("task", "Panel monitor")
+                
+                # If severity score is in JSON, track it
+                if "severity_score" in data:
+                    state["decision"]["reason"] = f"Severity: {data['severity_score']} ({data.get('status', '')})"
                 
                 # Log progress milestones
                 for milestone in [25, 50, 75, 100]:
@@ -587,6 +593,8 @@ def api_stop():
             subprocess.run(["pkill", "-9", "-f", "edge_runtime"], 
                           capture_output=True, timeout=5)
             subprocess.run(["pkill", "-9", "-f", "cloud_runtime"], 
+                          capture_output=True, timeout=5)
+            subprocess.run(["pkill", "-9", "-f", "panel_monitor.py"], 
                           capture_output=True, timeout=5)
             subprocess.run(["pkill", "-9", "-f", "car_detect.py"], 
                           capture_output=True, timeout=5)

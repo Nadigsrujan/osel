@@ -519,6 +519,25 @@
             </div>
         </div>
 
+        <!-- Panel Sensors -->
+        <div class="card">
+            <h3>🚨 Panel Sensors</h3>
+            <div class="telemetry-grid">
+                <div class="metric">
+                    <div id="panel-temp" class="metric-value">--</div>
+                    <div class="metric-label">Panel Temp (°C)</div>
+                </div>
+                <div class="metric">
+                    <div id="panel-dist" class="metric-value">--</div>
+                    <div class="metric-label">Intrusion (cm)</div>
+                </div>
+                <div class="metric">
+                    <div id="panel-light" class="metric-value">--</div>
+                    <div class="metric-label">Light Level</div>
+                </div>
+            </div>
+        </div>
+
         <!-- CPU Graph -->
         <div class="card">
             <h3>📈 CPU History</h3>
@@ -676,6 +695,19 @@
 
                     document.getElementById('migrations-value').textContent =
                         data.migration_stats.total_migrations;
+
+                    // Panel Sensors
+                    if (data.sensor_data) {
+                        document.getElementById('panel-temp').textContent = data.sensor_data.T || '--';
+                        document.getElementById('panel-dist').textContent = data.sensor_data.D || '--';
+                        document.getElementById('panel-light').textContent = data.sensor_data.L || '--';
+
+                        // Danger highlight
+                        const tempVal = parseFloat(data.sensor_data.T);
+                        const distVal = parseFloat(data.sensor_data.D);
+                        document.getElementById('panel-temp').className = 'metric-value' + (tempVal > 38 ? ' danger' : '');
+                        document.getElementById('panel-dist').className = 'metric-value' + (distVal < 10 && distVal > 0 ? ' danger' : '');
+                    }
 
                     // CPU Chart
                     if (data.cpu_history && data.cpu_history.length > 0) {

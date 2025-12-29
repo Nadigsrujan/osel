@@ -80,17 +80,17 @@ int main(int argc, char *argv[]) {
         if (task == NULL) {
             task = malloc(sizeof(task_state_t));
             task->progress_counter = 0;
-            strcpy(task->state_label, "car_detect");
-            strncpy(task->payload_path, task_image, sizeof(task->payload_path)-1);
+            strcpy(task->state_label, "panel_monitor");
+            strncpy(task->payload_path, "tasks/panel_monitor.py", sizeof(task->payload_path)-1);
             printf("[START] Initializing Task: %s on %s\n", task->state_label, task->payload_path);
         }
 
         // 3. Launch Python process
         if (py_pid == 0 && task) {
-            printf("[EXEC] Launching AI inference...\n");
+            printf("[EXEC] Launching Panel Monitoring Analysis...\n");
             py_pid = fork();
             if (py_pid == 0) {
-                execlp("python3", "python3", "tasks/car_detect.py", task->payload_path, NULL);
+                execlp("python3", "python3", task->payload_path, NULL);
                 exit(0);
             }
         }
