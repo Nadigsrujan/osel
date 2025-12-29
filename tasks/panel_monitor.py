@@ -13,9 +13,6 @@ try:
 except ImportError:
     pass
 
-# Simulation / Hardware flag
-HARDWARE_REQUIRED = False  # Set to True to force waiting for Arduino
-
 def save_panel_status(status, message, data=None):
     """Write panel sensor status for dashboard"""
     status_file = "/tmp/sensor_status.json"
@@ -23,18 +20,18 @@ def save_panel_status(status, message, data=None):
         "status": status,
         "message": message,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "sensor_data": data or {}
+        "sensor_data": data or {"T": 0, "D": 0, "L": 0}
     }
     with open(status_file, 'w') as f:
         json.dump(status_data, f)
 
 def wait_for_hazard():
-    """Wait for MIGRATE_REQ from Arduino via serial"""
+    """Wait for MIGRATE from ESP8266 via serial"""
     if not SERIAL_AVAILABLE:
-        print("[PANEL] Serial not available, starting in demo mode...")
-        save_panel_status("demo", "Running in demo mode (no hardware)")
-        return {"T": 42.5, "D": 5, "L": 150} # Simulated hazard data
+        print("[PANEL] Serial (pyserial) not installed. Check requirements.txt")
+        return None
 
+    # Common ports for NodeMCU
     ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', '/dev/cu.usbserial-0001']
     ser = None
     
@@ -47,13 +44,9 @@ def wait_for_hazard():
             continue
             
     if ser is None:
-        if HARDWARE_REQUIRED:
-            print("[ERROR] No Arduino found!")
-            save_panel_status("error", "Arduino not found")
-            return None
-        print("[PANEL] No hardware found, using simulated hazard...")
-        save_panel_status("demo", "No hardware, simulated hazard")
-        return {"T": 42.5, "D": 5, "L": 150}
+        print("[PANEL] No Arduino/ESP8266 found. Is it plugged in?")
+        save_panel_status("error", "Hardware not found")
+        return None
 
     print("[PANEL] Monitoring panel sensor stream...")
     save_panel_status("waiting", "🔴 System Normal - Monitoring...")
@@ -62,59 +55,83 @@ def wait_for_hazard():
         while True:
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if "MIGRATE" in line:
-                    # Parse data: MIGRATE,T=43.2,D=5
-                    print(f"[HAZARD] {line}")
-                    save_panel_status("detected", "⚠️ PANEL HAZARD DETECTED!")
-                    
-                    # Extract values
+                
+                # Update metrics immediately whenever data arrives
+                if any(x in line for x in ["T=", "D="]):
                     data = {}
-                    # Handle both "MIGRATE,T=..." and "MIGRATE_REQ,T=..."
                     parts = line.split(',')
-                    for p in parts[1:]:
+                    for p in parts:
                         if '=' in p:
                             k, v = p.split('=')
                             data[k] = float(v)
                     
-                    ser.close()
-                    return data
-            time.sleep(0.1)
+                    # Update status for dashboard display
+                    if "EDGE_OK" in line:
+                        save_panel_status("waiting", "🔴 System Normal", data)
+                    
+                    # Hazard Trigger
+                    if "MIGRATE" in line:
+                        print(f"[HAZARD] {line}")
+                        save_panel_status("detected", "⚠️ HAZARD DETECTED!", data)
+                        ser.close()
+                        return data
+            time.sleep(0.05)
     except KeyboardInterrupt:
         ser.close()
         return None
 
-def run_severity_analysis(sensor_data):
-    """Heavy computation to simulate cloud analysis"""
-    print(f"\n[ANALYSIS] Starting critical severity analysis for Panel...")
-    print(f"[DATA] Temp: {sensor_data['T']}C, Dist: {sensor_data['D']}cm, Light: {sensor_data['L']}")
+def run_heavy_analysis(sensor_data, start_progress=1):
+    """Simulated heavy computation to trigger REAL migration load"""
+    print(f"\n[ANALYSIS] Starting critical severity analysis for Panel (from {start_progress}%)...")
     
-    for i in range(1, 101):
-        # Severity calculation: Base temp + intrusion weight + light change
-        severity = sensor_data['T'] + (20 if sensor_data['D'] < 10 else 0)
+    for i in range(start_progress, 101):
+        # 1. ACTUAL CPU SPIKE: Do some math for a split second
+        end_time = time.time() + 0.5 
+        while time.time() < end_time:
+            _ = 12345 * 54321 # Waste CPU cycles
+            
+        # 2. Severity calculation
+        severity = sensor_data.get('T', 30.0) + (20 if sensor_data.get('D', 100) < 10 else 0)
         
-        # Write progress and internal state
+        # 3. Share state with system (allows C scheduler to 'checkpoint' us)
         state = {
             "progress": i,
             "task": "Panel Severity Analysis",
             "severity_score": round(severity, 2),
             "status": "DANGER" if severity > 50 else "CAUTION",
+            "sensor_data": sensor_data,
             "timestamp": time.time()
         }
         
         with open("/tmp/car_detect_internal.json", "w") as f:
             json.dump(state, f)
             
-        if i % 10 == 0:
+        if i % 5 == 0:
             print(f"[ANALYSIS] Progress: {i}% (Severity Score: {state['severity_score']})")
         
-        # Simulate load - increase sleep to make migration visible
-        time.sleep(1.5)
+        # Dashboard stress automation will take over once we hit 20%
+        time.sleep(0.2)
 
 if __name__ == "__main__":
-    # Signal that we started
+    # CHECK: Are we resuming from a checkpoint on the Cloud?
+    json_path = "/tmp/car_detect_internal.json"
+    
+    # If the file exists and progress > 0, we are MIGRATING/RESUMING
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r') as f:
+                checkpoint = json.load(f)
+                if checkpoint.get("progress", 0) > 0 and checkpoint.get("progress", 0) < 100:
+                    print(f"[CLOUD] Resuming analysis from {checkpoint['progress']}%...")
+                    run_heavy_analysis(checkpoint.get("sensor_data", {}), checkpoint["progress"])
+                    sys.exit(0)
+        except:
+            pass
+
+    # Normal Edge Start
     with open("/tmp/dashboard_started", "w") as f:
         f.write("1")
         
     sensor_data = wait_for_hazard()
     if sensor_data:
-        run_severity_analysis(sensor_data)
+        run_heavy_analysis(sensor_data)

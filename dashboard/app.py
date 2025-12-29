@@ -294,6 +294,10 @@ def read_task_status():
                 state["progress"] = data.get("progress", 0)
                 state["task_name"] = data.get("task", "Panel monitor")
                 
+                # If sensor data is inside this progress JSON, use it too
+                if "sensor_data" in data:
+                    state["sensor_data"] = data["sensor_data"]
+                
                 # If severity score is in JSON, track it
                 if "severity_score" in data:
                     state["decision"]["reason"] = f"Severity: {data['severity_score']} ({data.get('status', '')})"
