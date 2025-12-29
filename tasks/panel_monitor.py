@@ -62,17 +62,19 @@ def wait_for_hazard():
         while True:
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if "MIGRATE_REQ" in line:
-                    # Parse data: MIGRATE_REQ,T=43.2,D=5,L=120
+                if "MIGRATE" in line:
+                    # Parse data: MIGRATE,T=43.2,D=5
                     print(f"[HAZARD] {line}")
-                    save_panel_status("detected", "⚠️ HAZARD DETECTED!")
+                    save_panel_status("detected", "⚠️ PANEL HAZARD DETECTED!")
                     
                     # Extract values
                     data = {}
+                    # Handle both "MIGRATE,T=..." and "MIGRATE_REQ,T=..."
                     parts = line.split(',')
                     for p in parts[1:]:
-                        k, v = p.split('=')
-                        data[k] = float(v)
+                        if '=' in p:
+                            k, v = p.split('=')
+                            data[k] = float(v)
                     
                     ser.close()
                     return data
