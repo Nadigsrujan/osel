@@ -257,7 +257,7 @@ ser_watchdog = None
 def serial_watchdog_thread():
     """Permanent background thread to listen to Arduino and manage migration triggers"""
     global ser_watchdog
-    print("[SERVER] Starting Hardware Watchdog Thread...")
+    print("\n[WATCHDOG] 📡 Starting Hardware Watchdog...")
     
     ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyUSB1', '/dev/cu.usbserial-0001']
     hazard_file = "/tmp/SENSOR_HAZARD"
@@ -268,10 +268,13 @@ def serial_watchdog_thread():
                 try:
                     import serial
                     ser_watchdog = serial.Serial(port, 9600, timeout=1)
-                    log_event(f"🔌 Serial Watchdog connected to {port}")
+                    print(f"[WATCHDOG] ✅ Connected to {port}")
+                    log_event(f"🔌 Sensor Hardware Connected: {port}")
                     break
-                except: continue
+                except Exception as e:
+                    continue
             if ser_watchdog is None:
+                # Still no port found
                 time.sleep(5)
                 continue
 
@@ -280,35 +283,39 @@ def serial_watchdog_thread():
                 line = ser_watchdog.readline().decode('utf-8', errors='ignore').strip()
                 
                 # Parse metrics for dashboard
-                if "T=" in line and "D=" in line:
+                if "T=" in line or "D=" in line:
                     data = {}
                     parts = line.split(',')
                     for p in parts:
                         if '=' in p:
-                            k, v = p.split('=')
-                            data[k] = float(v)
+                            try:
+                                k, v = p.split('=')
+                                data[k] = float(v)
+                            except: pass
                     
                     # Update global sensor state
                     state["sensor_data"] = data
                     
-                    if "MIGRATE" in line:
+                    if "MIGRATE" in line or "CLOUD_DATA" in line:
                         state["sensor_status"] = "detected"
                         state["sensor_message"] = "⚠️ HAZARD DETECTED"
                         # Create physical trigger for C schedulers
                         if not os.path.exists(hazard_file):
                             with open(hazard_file, "w") as f: f.write("1")
+                        save_panel_status("detected", "⚠️ HAZARD DETECTED", data)
                     else:
                         state["sensor_status"] = "waiting"
                         state["sensor_message"] = "🟢 System Safe"
                         # Remove trigger
                         if os.path.exists(hazard_file):
                             os.remove(hazard_file)
+                        save_panel_status("waiting", "🟢 System Safe", data)
 
         except Exception as e:
             print(f"[WATCHDOG ERROR] {e}")
             ser_watchdog = None
             time.sleep(2)
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 # Start the watchdog immediately
 threading.Thread(target=serial_watchdog_thread, daemon=True).start()
