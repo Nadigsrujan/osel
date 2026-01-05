@@ -211,9 +211,14 @@ def read_telemetry():
                 # Also get location and progress from C program
                 if "location" in data:
                     state["location"] = data["location"]
-                if "progress" in data and data["progress"] >= 0:
-                    # Only update progress if it's valid (not -1 placeholder)
-                    state["progress"] = data["progress"]
+                if "progress" in data:
+                    # If progress is -1, task is remote
+                    if data["progress"] == -1:
+                        # Keep last known progress, don't overwrite with -1
+                        # The location will show "cloud" so user knows it's remote
+                        pass
+                    else:
+                        state["progress"] = data["progress"]
                 return  # Got data from C program
         except Exception as e:
             print(f"Error reading telemetry file: {e}")
