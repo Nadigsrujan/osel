@@ -323,6 +323,10 @@ def serial_watchdog_thread():
             if ser_watchdog.in_waiting > 0:
                 line = ser_watchdog.readline().decode('utf-8', errors='ignore').strip()
                 
+                # DEBUG: Show ALL serial data
+                if line:
+                    print(f"  [SERIAL RAW] {line}")
+                
                 # Parse metrics for dashboard
                 if "T=" in line or "D=" in line:
                     data = {}
