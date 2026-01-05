@@ -145,45 +145,8 @@ int receive_checkpoint_from_edge(const char *save_path) {
     }
 }
 
-// Send return state back to Edge
-int send_return_to_edge(const char *filepath, const char *edge_ip) {
-    FILE *f = fopen(filepath, "rb");
-    if (!f) return -1;
-    
-    fseek(f, 0, SEEK_END);
-    long file_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    char *buffer = malloc(file_size);
-    fread(buffer, 1, file_size, f);
-    fclose(f);
-    
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(RETURN_PORT);
-    inet_pton(AF_INET, edge_ip, &server_addr.sin_addr);
-    
-    printf("[NET] Sending return state to Edge at %s:%d...\n", edge_ip, RETURN_PORT);
-    
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("[NET] Connection to Edge failed");
-        close(sock);
-        free(buffer);
-        return -1;
-    }
-    
-    send(sock, &file_size, sizeof(file_size), 0);
-    send(sock, buffer, file_size, 0);
-    
-    close(sock);
-    free(buffer);
-    printf("[NET] Return state sent successfully.\n");
-    return 0;
-}
-
-// Receive return state from Cloud (Edge-side listener)
-int receive_return_from_cloud(const char *save_path) {
+// Cloud-side: Listen for a 'Return Request' from Edge and send the file
+int send_return_to_edge_service(const char *filepath) {
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
     setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -200,31 +163,73 @@ int receive_return_from_cloud(const char *save_path) {
     }
     
     listen(server_sock, 1);
-    printf("[NET] Listening for return on port %d...\n", RETURN_PORT);
+    printf("[NET] AWS Cloud is READY. Waiting for Edge to 'PULL' the task back on port %d...\n", RETURN_PORT);
     
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_len);
     
+    if (client_sock < 0) return -1;
+
+    // Send the file back through the established tunnel
+    FILE *f = fopen(filepath, "rb");
+    if (!f) { close(client_sock); close(server_sock); return -1; }
+    
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    send(client_sock, &file_size, sizeof(file_size), 0);
+    char *buffer = malloc(file_size);
+    fread(buffer, 1, file_size, f);
+    send(client_sock, buffer, file_size, 0);
+    
+    fclose(f);
+    free(buffer);
+    close(client_sock);
+    close(server_sock);
+    printf("[NET] Task state successfully PULLED back to Edge.\n");
+    return 0;
+}
+
+// Edge-side: Connect to AWS and 'Pull' the task back
+int request_return_from_cloud(const char *save_path, const char *cloud_ip) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(RETURN_PORT);
+    inet_pton(AF_INET, cloud_ip, &server_addr.sin_addr);
+    
+    printf("[NET] Connecting to AWS to PULL task back (%s)... \n", cloud_ip);
+    
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        // AWS might not be ready yet, that's okay, we'll try again next loop
+        close(sock);
+        return -1;
+    }
+    
     long file_size;
-    recv(client_sock, &file_size, sizeof(file_size), 0);
+    if (recv(sock, &file_size, sizeof(file_size), 0) <= 0) {
+        close(sock);
+        return -1;
+    }
     
     char *buffer = malloc(file_size);
     ssize_t received = 0;
     while (received < file_size) {
-        ssize_t r = recv(client_sock, buffer + received, file_size - received, 0);
+        ssize_t r = recv(sock, buffer + received, file_size - received, 0);
         if (r <= 0) break;
         received += r;
     }
     
-    close(client_sock);
-    close(server_sock);
+    if (received == file_size) {
+        FILE *f = fopen(save_path, "wb");
+        fwrite(buffer, 1, file_size, f);
+        fclose(f);
+        printf("[NET] Task state successfully retrieved from AWS.\n");
+    }
     
-    FILE *f = fopen(save_path, "wb");
-    fwrite(buffer, 1, file_size, f);
-    fclose(f);
+    close(sock);
     free(buffer);
-    
-    printf("[NET] Return state received from Cloud.\n");
-    return 0;
+    return (received == file_size) ? 0 : -1;
 }
