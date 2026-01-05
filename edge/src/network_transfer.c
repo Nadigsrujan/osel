@@ -101,15 +101,15 @@ int receive_checkpoint_from_edge(const char *save_path) {
     
     listen(server_sock, 1);
     
-    // Set a 1-second timeout for the migration check
+    // Set a 3-second timeout for the migration check (Internet is slow)
     fd_set fds;
-    struct timeval tv = {1, 0};
+    struct timeval tv = {3, 0};
     FD_ZERO(&fds);
     FD_SET(server_sock, &fds);
     
     if (select(server_sock + 1, &fds, NULL, NULL, &tv) <= 0) {
         close(server_sock);
-        return -2; // Timeout code
+        return -2; 
     }
 
     struct sockaddr_in client_addr;
@@ -174,9 +174,9 @@ int send_return_to_edge_service(const char *filepath) {
     
     listen(server_sock, 1);
 
-    // Set a very short timeout (100ms) for the return check
+    // Set a 1.5 second timeout for the return check
     fd_set fds;
-    struct timeval tv = {0, 100000};
+    struct timeval tv = {1, 500000};
     FD_ZERO(&fds);
     FD_SET(server_sock, &fds);
     
@@ -220,7 +220,7 @@ int request_return_from_cloud(const char *save_path, const char *cloud_ip) {
     server_addr.sin_port = htons(RETURN_PORT);
     inet_pton(AF_INET, cloud_ip, &server_addr.sin_addr);
     
-    printf("[NET] Connecting to AWS to PULL task back (%s)... \n", cloud_ip);
+    printf("[NET] Attempting to PULL task back from AWS... \n");
     
     if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         // AWS might not be ready yet, that's okay, we'll try again next loop
