@@ -157,39 +157,38 @@ def update_cpu_history():
 def measure_network_latency():
     """Measure real-world network latency (Edge-to-Cloud link)"""
     import socket
-    import random
     
-    # Target: Real public DNS for demo credibility, or local gateway
-    targets = ["8.8.8.8", "1.1.1.1", "127.0.0.1"]
+    # Target: Real public DNS for demo credibility, or the local cloud manager
+    targets = [("8.8.8.8", 53), ("1.1.1.1", 53), ("127.0.0.1", 9090)]
     
-    for target in targets:
+    for target_ip, target_port in targets:
         try:
-            start = time.time()
+            # Use high-precision performance counter
+            start = time.perf_counter()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            # Try connecting to DNS port 53
-            sock.connect((target, 53 if target != "127.0.0.1" else 9090))
+            sock.settimeout(0.8)
+            sock.connect((target_ip, target_port))
             sock.close()
-            latency = (time.time() - start) * 1000
+            end = time.perf_counter()
             
-            # Add tiny random jitter to make it look 'live'
-            state["telemetry"]["network_latency"] = round(latency + random.uniform(0.1, 0.5), 1)
+            # Actual measured time in milliseconds
+            latency = (end - start) * 1000
+            
+            state["telemetry"]["network_latency"] = round(latency, 2)
             break
         except:
             continue
     
-    # If all fail (offline), simulate a realistic local network (2-7ms)
-    if state["telemetry"]["network_latency"] <= 0.2:
-        state["telemetry"]["network_latency"] = round(random.uniform(2.1, 7.4), 1)
-
-    # Update Decision Engine status
+    # Update Decision Engine status based on real measurement
     l = state["telemetry"]["network_latency"]
-    if l < 30:
+    if l == 0:
+        state["decision"]["network_status"] = "Unknown"
+    elif l < 20:
         state["decision"]["network_status"] = "Excellent (Ultra-Low)"
-    elif l < 100:
+    elif l < 80:
         state["decision"]["network_status"] = "Good (Stable)"
     else:
-        state["decision"]["network_status"] = "Congested (High)"
+        state["decision"]["network_status"] = "Congested (High Audit)"
 
 
 def read_telemetry():
