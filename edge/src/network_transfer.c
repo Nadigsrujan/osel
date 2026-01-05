@@ -100,8 +100,18 @@ int receive_checkpoint_from_edge(const char *save_path) {
     }
     
     listen(server_sock, 1);
-    printf("[NET] Listening for migrations on port %d...\n", MIGRATION_PORT);
     
+    // Set a 1-second timeout for the migration check
+    fd_set fds;
+    struct timeval tv = {1, 0};
+    FD_ZERO(&fds);
+    FD_SET(server_sock, &fds);
+    
+    if (select(server_sock + 1, &fds, NULL, NULL, &tv) <= 0) {
+        close(server_sock);
+        return -2; // Timeout code
+    }
+
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_len);
@@ -163,8 +173,18 @@ int send_return_to_edge_service(const char *filepath) {
     }
     
     listen(server_sock, 1);
-    printf("[NET] AWS Cloud is READY. Waiting for Edge to 'PULL' the task back on port %d...\n", RETURN_PORT);
+
+    // Set a very short timeout (100ms) for the return check
+    fd_set fds;
+    struct timeval tv = {0, 100000};
+    FD_ZERO(&fds);
+    FD_SET(server_sock, &fds);
     
+    if (select(server_sock + 1, &fds, NULL, NULL, &tv) <= 0) {
+        close(server_sock);
+        return -2; 
+    }
+
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_len);

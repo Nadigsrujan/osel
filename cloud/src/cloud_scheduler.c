@@ -9,7 +9,7 @@
 
 int main() {
     printf("============================================\n");
-    printf("   AWS CLOUD RUNTIME - Phase 3 (Pull-Return)\n");
+    printf("   AWS CLOUD NODE - READY (Non-Blocking)\n");
     printf("============================================\n\n");
     
     task_state_t *task = NULL;
@@ -20,15 +20,14 @@ int main() {
     const char *json_file = "/tmp/car_detect_internal.json";
 
     while (1) {
-        // 1. Wait for migration from Edge (Standard Push)
+        // 1. Check for incoming migration (Non-blocking check)
         if (task == NULL) {
-            printf("[WAIT] Waiting for task migration from Edge on port 9090...\n");
-            if (receive_checkpoint_from_edge(state_file) == 0) {
+            int res = receive_checkpoint_from_edge(state_file);
+            if (res == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);
                 printf("[RECEIVE] Task resumed at %d%%\n", task->progress_counter);
                 
-                // Set start state for Python
                 FILE *f = fopen(json_file, "w");
                 fprintf(f, "{\"progress\": %d}", task->progress_counter);
                 fclose(f);
@@ -36,9 +35,8 @@ int main() {
             }
         }
 
-        // 2. Launch Python process
+        // 2. Launch locally on AWS
         if (task && py_pid == 0) {
-            printf("[EXEC] Launching Analytics Engine on AWS Cloud...\n");
             py_pid = fork();
             if (py_pid == 0) {
                 execlp("python3", "python3", "tasks/panel_monitor.py", NULL);
@@ -46,7 +44,7 @@ int main() {
             }
         }
 
-        // 3. Monitor progress
+        // 3. Monitor and Serve Pull Request
         if (task) {
             FILE *pf = fopen(json_file, "r");
             if (pf) {
@@ -58,38 +56,26 @@ int main() {
                 fclose(pf);
             }
             
-            printf("[CLOUD] Task Progress: %d%%\n", task->progress_counter);
+            printf("[CLOUD] Analyzing... %d%%\n", task->progress_counter);
 
-            // Check completion
             if (task->progress_counter >= 100) {
-                printf("[FINISH] Task completed on Cloud!\n");
+                printf("[FINISH] Complete.\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 return 0;
             }
 
-            // AWS Cloud: No longer checks for sensors! 
-            // It simply waits for the Edge to 'PULL' the task back via Port 9091.
-            // We use a non-blocking check for the pull service.
-            
-            // If the Edge connects to Port 9091, it means the hazard is clear.
-            // We'll use our new service function here.
-            
-            // Prepare the return checkpoint in case Edge calls
+            // Non-blocking check for Return Pull
             save_checkpoint(return_file, task);
-            
-            // This is the CRITICAL change: We wait for the Edge to fetch the file.
-            // Note: This function is now the listener.
             if (send_return_to_edge_service(return_file) == 0) {
-                printf("[RETURN] Task successfully pulled back by Edge.\n");
+                printf("[RETURN] Task PULLED back by Edge.\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 free(task);
                 task = NULL;
                 py_pid = 0;
-                printf("[WAIT] Ready for next migration.\n\n");
             }
         }
 
-        sleep(1);
+        usleep(500000); // 0.5s loop
     }
     return 0;
 }
