@@ -212,11 +212,26 @@ def read_telemetry():
                 if "location" in data:
                     state["location"] = data["location"]
                 if "progress" in data:
-                    # If progress is -1, task is remote
-                    if data["progress"] == -1:
-                        # Keep last known progress, don't overwrite with -1
-                        # The location will show "cloud" so user knows it's remote
-                        pass
+                    # If progress is -1, task is remote - fetch from cloud!
+                    if data["progress"] == -1 and state["location"] == "cloud":
+                        try:
+                            # Fetch cloud progress via SSH
+                            result = subprocess.run(
+                                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2",
+                                 f"ubuntu@{CLOUD_IP}", "cat /tmp/car_detect_internal.json 2>/dev/null || echo '{}'"],
+                                capture_output=True,
+                                text=True,
+                                timeout=3
+                            )
+                            if result.returncode == 0 and result.stdout.strip():
+                                cloud_data = json.loads(result.stdout)
+                                cloud_progress = cloud_data.get("progress", state["progress"])
+                                if cloud_progress > 0:
+                                    state["progress"] = cloud_progress
+                                    if "analytics" in cloud_data:
+                                        state["analytics"] = cloud_data["analytics"]
+                        except:
+                            pass  # If SSH fails, keep last known progress
                     else:
                         state["progress"] = data["progress"]
                 return  # Got data from C program
