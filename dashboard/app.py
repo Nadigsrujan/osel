@@ -27,6 +27,11 @@ app = Flask(__name__)
 CLOUD_IP = "54.255.248.144"
 CLOUD_PORT = 9090
 
+# Dynamic path detection - works on both Mac and Ubuntu
+PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLOUD_BIN = os.path.join(PROJECT_PATH, "cloud", "cloud_runtime")
+EDGE_BIN = os.path.join(PROJECT_PATH, "edge", "edge_runtime")
+
 # Start time for uptime calculation
 start_time = time.time()
 
