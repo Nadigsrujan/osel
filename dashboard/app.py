@@ -215,13 +215,16 @@ def read_telemetry():
                     # If progress is -1, task is remote - fetch from cloud!
                     if data["progress"] == -1 and state["location"] == "cloud":
                         try:
-                            # Fetch cloud progress via SSH
+                            # Fast fetch cloud progress via SSH (0.5s timeout)
                             result = subprocess.run(
-                                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2",
-                                 f"ubuntu@{CLOUD_IP}", "cat /tmp/car_detect_internal.json 2>/dev/null || echo '{}'"],
+                                ["ssh", "-o", "StrictHostKeyChecking=no", 
+                                 "-o", "ConnectTimeout=1",
+                                 "-o", "ServerAliveInterval=1",
+                                 f"ubuntu@{CLOUD_IP}", 
+                                 "cat /tmp/car_detect_internal.json 2>/dev/null || echo '{}'"],
                                 capture_output=True,
                                 text=True,
-                                timeout=3
+                                timeout=0.5
                             )
                             if result.returncode == 0 and result.stdout.strip():
                                 cloud_data = json.loads(result.stdout)
