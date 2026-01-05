@@ -65,9 +65,8 @@ def run_analysis(start_at=0, initial_history=None):
     progress = start_at
     
     while progress < 100:
-        # 1. HEAVY COMPUTE: Cloud-only Predictive Math (Simulated)
-        # Reduced from 0.35 to 0.1 for speed
-        end_time = time.time() + 0.1
+        # 1. HEAVY COMPUTE: Balanced for Demo
+        end_time = time.time() + 0.2
         while time.time() < end_time:
             _ = 8000 * 8000 
 
@@ -84,18 +83,18 @@ def run_analysis(start_at=0, initial_history=None):
         history.append({"T": sensor_data.get('T', 30.0), "time": time.time()})
         if len(history) > 15: history.pop(0)
 
-        # Update progress (Faster: 5% per step)
-        progress += 5
+        # Update progress (Balanced: 3% per step)
+        progress += 3
         if progress > 100: progress = 100
         
         # 4. Perform Analytics & Save
         save_internal_state(progress, sensor_data, history)
 
-        if progress % 10 == 0:
+        if progress % 9 == 0:
             print(f"[TASK] Analyzing... {progress}%")
             
-        # Reduced sleep from 1.2 to 0.4 for speed
-        time.sleep(0.4)
+        # Balanced sleep for smooth demo flow
+        time.sleep(0.8)
 
     print("[TASK] Finished 100%")
     time.sleep(1) # Final grace period
