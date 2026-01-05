@@ -16,7 +16,6 @@ int main() {
     printf("============================================\n\n");
     
     task_state_t *task = NULL;
-    system_metrics_t metrics;
     pid_t py_pid = 0;
     
     const char *state_file = "/tmp/task_state.bin";

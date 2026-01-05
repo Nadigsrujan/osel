@@ -23,7 +23,6 @@ int main() {
         // 1. Wait for migration from Edge (Standard Push)
         if (task == NULL) {
             printf("[WAIT] Waiting for task migration from Edge on port 9090...\n");
-            char dummy_ip[64];
             if (receive_checkpoint_from_edge(state_file) == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);

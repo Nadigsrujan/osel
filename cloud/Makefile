@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-I../edge/include -Wall
-SRC=src/cloud_scheduler.c ../edge/src/restore_lib.c ../edge/src/checkpoint_lib.c
+SRC=src/cloud_scheduler.c ../edge/src/restore_lib.c ../edge/src/checkpoint_lib.c ../edge/src/network_transfer.c
 TARGET=cloud_runtime
 
 all: $(TARGET)

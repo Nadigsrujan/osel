@@ -13,10 +13,10 @@ int send_checkpoint_to_cloud(const char *filepath);
 // Cloud: Receive checkpoint from Edge
 int receive_checkpoint_from_edge(const char *save_path);
 
-// Cloud → Edge: Send return state
-int send_return_to_edge(const char *filepath, const char *edge_ip);
+// Cloud: Listen for a 'Return Request' from Edge and send the file
+int send_return_to_edge_service(const char *filepath);
 
-// Edge: Receive return state from Cloud
-int receive_return_from_cloud(const char *save_path);
+// Edge: Connect to AWS and 'Pull' the task back
+int request_return_from_cloud(const char *save_path, const char *cloud_ip);
 
 #endif
