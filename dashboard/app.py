@@ -382,6 +382,10 @@ def read_task_status():
                 if "sensor_data" in data:
                     state["sensor_data"] = data["sensor_data"]
                 
+                # If analytics predictive data is present
+                if "analytics" in data:
+                    state["analytics"] = data["analytics"]
+                
                 # If severity score is in JSON, track it
                 if "severity_score" in data:
                     state["decision"]["reason"] = f"Severity: {data['severity_score']} ({data.get('status', '')})"
