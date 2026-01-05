@@ -531,10 +531,6 @@
                     <div id="panel-dist" class="metric-value">--</div>
                     <div class="metric-label">Intrusion (cm)</div>
                 </div>
-                <div class="metric">
-                    <div id="panel-light" class="metric-value">--</div>
-                    <div class="metric-label">Light Level</div>
-                </div>
             </div>
         </div>
         <!-- Predictive AI -->
@@ -718,7 +714,6 @@
                     if (data.sensor_data) {
                         document.getElementById('panel-temp').textContent = data.sensor_data.T || '--';
                         document.getElementById('panel-dist').textContent = data.sensor_data.D || '--';
-                        document.getElementById('panel-light').textContent = data.sensor_data.L || '--';
 
                         // Danger highlight
                         const tempVal = parseFloat(data.sensor_data.T);
