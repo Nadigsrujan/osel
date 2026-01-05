@@ -572,6 +572,19 @@ def api_status():
         }
     })
 
+@app.route('/api/cloud_sync', methods=['POST'])
+def cloud_sync():
+    """Receive progress updates from the remote AWS Cloud"""
+    try:
+        data = request.json
+        state["progress"] = data.get("progress", state["progress"])
+        state["analytics"] = data.get("analytics", state.get("analytics"))
+        state["location"] = "cloud"
+        state["decision"]["reason"] = "Cloud Analysis Active"
+        return jsonify({"status": "ok"})
+    except:
+        return jsonify({"error": "sync failed"}), 400
+
 @app.route('/api/start', methods=['POST'])
 def api_start():
     """Start a new task with proper initialization"""

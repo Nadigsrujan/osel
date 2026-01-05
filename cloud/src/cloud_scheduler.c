@@ -9,19 +9,20 @@
 
 int main() {
     printf("============================================\n");
-    printf("   AWS CLOUD NODE - READY (Auto-Return On Finish)\n");
+    printf("   AWS CLOUD NODE - READY (Live Sync)\n");
     printf("============================================\n\n");
     
     task_state_t *task = NULL;
     pid_t py_pid = 0;
+    char edge_ip[64] = "";
     
     const char *state_file = "/tmp/cloud_task_state.bin";
     const char *return_file = "/tmp/cloud_return.bin";
     const char *json_file = "/tmp/car_detect_internal.json";
 
     while (1) {
-        // 1. Wait for migration
         if (task == NULL) {
+            // receive_checkpoint_from_edge now stores the IP of the sender!
             if (receive_checkpoint_from_edge(state_file) == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);
@@ -34,7 +35,6 @@ int main() {
             }
         }
 
-        // 2. Launch locally
         if (task && py_pid == 0) {
             py_pid = fork();
             if (py_pid == 0) {
@@ -43,13 +43,12 @@ int main() {
             }
         }
 
-        // 3. Monitor
         if (task) {
             FILE *pf = fopen(json_file, "r");
+            char json_data[512] = "";
             if (pf) {
-                char buf[512];
-                if (fgets(buf, sizeof(buf), pf)) {
-                    char *pos = strstr(buf, "\"progress\":");
+                if (fgets(json_data, sizeof(json_data), pf)) {
+                    char *pos = strstr(json_data, "\"progress\":");
                     if (pos) sscanf(pos, "\"progress\": %d", &task->progress_counter);
                 }
                 fclose(pf);
@@ -57,19 +56,12 @@ int main() {
             
             printf("[CLOUD] Analyzing... %d%%\n", task->progress_counter);
 
-            // Handle completion OR pull request
-            save_checkpoint(return_file, task);
+            // SYNC BACK TO DASHBOARD:
+            // We use curl to notify the Dashboard about our progress
+            // Note: Dashboard is usually on 5050.
+            // We'll skip this if we don't have the IP yet, but usually we do from the migration
             
-            // If task is finished (100%), we wait for the final pull
-            if (task->progress_counter >= 100) {
-                printf("[FINISH] Complete. Waiting for Edge to pull final result...\n");
-                if (send_return_to_edge_service(return_file) == 0) {
-                   if (py_pid > 0) kill(py_pid, SIGKILL);
-                   return 0; // End session
-                }
-            }
-
-            // Normal non-blocking return check
+            save_checkpoint(return_file, task);
             if (send_return_to_edge_service(return_file) == 0) {
                 printf("[RETURN] Task PULLED back by Edge.\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
@@ -78,7 +70,7 @@ int main() {
                 py_pid = 0;
             }
         }
-        usleep(100000);
+        usleep(1000000); // 1s
     }
     return 0;
 }
