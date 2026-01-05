@@ -94,9 +94,11 @@ int main(int argc, char *argv[]) {
         // Sync progress from JSON
         FILE *pf = fopen(json_file, "r");
         if (pf) {
-            char buf[128];
-            if (fgets(buf, sizeof(buf), pf)) 
-                sscanf(buf, "{\"progress\": %d", &task->progress_counter);
+            char buf[512]; // Increased from 128
+            if (fgets(buf, sizeof(buf), pf)) {
+                char *pos = strstr(buf, "\"progress\":");
+                if (pos) sscanf(pos, "\"progress\": %d", &task->progress_counter);
+            }
             fclose(pf);
         }
 

@@ -51,6 +51,11 @@ def run_analysis(start_at=0):
             print(f"[TASK] Current Progress: {i}%")
             
         time.sleep(0.1)
+    
+    # Final save at 100% and wait for C manager to read it
+    print("[TASK] Analysis Finished (100%)")
+    save_internal_state(100, sensor_data)
+    time.sleep(1.0) 
 
 if __name__ == "__main__":
     # Signal that we are alive
