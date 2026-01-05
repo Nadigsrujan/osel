@@ -212,29 +212,33 @@ def read_telemetry():
                 if "location" in data:
                     state["location"] = data["location"]
                 if "progress" in data:
-                    # If progress is -1, task is remote - fetch from cloud!
+                    # If progress is -1, task is remote - fetch from cloud (with rate limiting)
                     if data["progress"] == -1 and state["location"] == "cloud":
-                        try:
-                            # Fast fetch cloud progress via SSH (0.5s timeout)
-                            result = subprocess.run(
-                                ["ssh", "-o", "StrictHostKeyChecking=no", 
-                                 "-o", "ConnectTimeout=1",
-                                 "-o", "ServerAliveInterval=1",
-                                 f"ubuntu@{CLOUD_IP}", 
-                                 "cat /tmp/car_detect_internal.json 2>/dev/null || echo '{}'"],
-                                capture_output=True,
-                                text=True,
-                                timeout=0.5
-                            )
-                            if result.returncode == 0 and result.stdout.strip():
-                                cloud_data = json.loads(result.stdout)
-                                cloud_progress = cloud_data.get("progress", state["progress"])
-                                if cloud_progress > 0:
-                                    state["progress"] = cloud_progress
-                                    if "analytics" in cloud_data:
-                                        state["analytics"] = cloud_data["analytics"]
-                        except:
-                            pass  # If SSH fails, keep last known progress
+                        # Don't spam SSH - cache for 3 seconds
+                        now = time.time()
+                        if not hasattr(read_telemetry, '_last_cloud_fetch') or (now - read_telemetry._last_cloud_fetch > 3):
+                            read_telemetry._last_cloud_fetch = now
+                            try:
+                                # Quick non-blocking fetch
+                                result = subprocess.run(
+                                    ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", 
+                                     "-o", "ConnectTimeout=1",
+                                     f"ubuntu@{CLOUD_IP}", 
+                                     "cat /tmp/car_detect_internal.json 2>/dev/null || echo '{}'"],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=1
+                                )
+                                if result.returncode == 0 and result.stdout.strip() and result.stdout != '{}':
+                                    cloud_data = json.loads(result.stdout)
+                                    cloud_progress = cloud_data.get("progress", 0)
+                                    if cloud_progress > 0:
+                                        state["progress"] = cloud_progress
+                                        if "analytics" in cloud_data:
+                                            state["analytics"] = cloud_data["analytics"]
+                            except:
+                                pass  # Silently fail, keep last known progress
+                        # Don't overwrite with -1
                     else:
                         state["progress"] = data["progress"]
                 return  # Got data from C program
