@@ -7,16 +7,9 @@
 #include "../../edge/include/checkpoint.h"
 #include "../../edge/include/network_transfer.h"
 
-void sync_to_dashboard(int progress) {
-    char cmd[256];
-    // This calls the API we just added to your dashboard to show live progress from AWS!
-    sprintf(cmd, "curl -s -X POST -H 'Content-Type: application/json' -d '{\"progress\": %d}' http://localhost:5050/api/cloud_sync > /dev/null 2>&1", progress);
-    system(cmd);
-}
-
 int main() {
     printf("============================================\n");
-    printf("   AWS CLOUD NODE - READY (Live Sync On)\n");
+    printf("   AWS CLOUD NODE - READY                  \n");
     printf("============================================\n\n");
     
     task_state_t *task = NULL;
@@ -27,11 +20,12 @@ int main() {
     const char *json_file = "/tmp/car_detect_internal.json";
 
     while (1) {
+        // 1. Wait for migration from Edge
         if (task == NULL) {
             if (receive_checkpoint_from_edge(state_file) == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);
-                printf("[RECEIVE] Task resumed on AWS at %d%%\n", task->progress_counter);
+                printf("[MIGRATION] Received task at %d%%\n", task->progress_counter);
                 
                 FILE *f = fopen(json_file, "w");
                 fprintf(f, "{\"progress\": %d}", task->progress_counter);
@@ -40,7 +34,9 @@ int main() {
             }
         }
 
+        // 2. Launch Python process on AWS
         if (task && py_pid == 0) {
+            printf("[EXEC] Starting analysis on AWS...\n");
             py_pid = fork();
             if (py_pid == 0) {
                 execlp("python3", "python3", "tasks/panel_monitor.py", NULL);
@@ -48,6 +44,7 @@ int main() {
             }
         }
 
+        // 3. Monitor progress
         if (task) {
             FILE *pf = fopen(json_file, "r");
             if (pf) {
@@ -59,21 +56,21 @@ int main() {
                 fclose(pf);
             }
             
-            // Send live progress back to your dashboard (Localhost as the Edge will Proxy it)
-            sync_to_dashboard(task->progress_counter);
-            
-            printf("[CLOUD] Remote Processing... %d%%\n", task->progress_counter);
+            printf("[CLOUD] Processing... %d%%\n", task->progress_counter);
 
+            // Prepare return checkpoint
             save_checkpoint(return_file, task);
+            
+            // Check if Edge wants to pull it back
             if (send_return_to_edge_service(return_file) == 0) {
-                printf("[RETURN] Handover complete.\n");
+                printf("[RETURN] Task retrieved by Edge.\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 free(task);
                 task = NULL;
                 py_pid = 0;
             }
         }
-        usleep(1000000); 
+        usleep(1000000); // 1s
     }
     return 0;
 }

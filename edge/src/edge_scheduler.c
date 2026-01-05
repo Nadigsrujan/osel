@@ -11,10 +11,16 @@
 
 #define CLOUD_IP "54.255.248.144"
 
-int main() {
+int main(int argc, char *argv[]) {
     printf("============================================\n");
-    printf("   OS-EL EDGE MANAGER (Pro Stability)    \n");
+    printf("   EDGE MANAGER (AWS Cloud Migration)      \n");
     printf("============================================\n\n");
+    
+    char *cloud_ip = CLOUD_IP;
+    if (argc > 1) {
+        cloud_ip = argv[1];
+        printf("[CONFIG] Using Cloud IP: %s\n", cloud_ip);
+    }
     
     task_state_t *task = NULL;
     system_metrics_t metrics;
@@ -31,18 +37,17 @@ int main() {
 
         // 1. Task is on AWS - Check for Pull Back
         if (is_remote) {
-            // Signal dashboard that we are waiting for return
             write_telemetry_json(&metrics, "cloud", -1); 
             
-            // HYSTERESIS: Only pull back if sensor is clear AND 3 seconds have passed
+            // HYSTERESIS: Only pull back after 3 seconds
             if (access("/tmp/SENSOR_HAZARD", F_OK) == -1 && (time(NULL) - last_migration_time > 3)) {
-                printf("[NET] Sensor Clear. Pulling task back from AWS...\n");
-                if (request_return_from_cloud(return_file, CLOUD_IP) == 0) {
+                printf("[NET] Sensor clear. Requesting task from AWS...\n");
+                if (request_return_from_cloud(return_file, cloud_ip) == 0) {
                     task = malloc(sizeof(task_state_t));
                     restore_checkpoint(return_file, task);
                     is_remote = 0;
                     last_migration_time = time(NULL);
-                    printf("[RESUME] Task recovered at %d%%\n", task->progress_counter);
+                    printf("[SUCCESS] Task returned at %d%%\n", task->progress_counter);
                     
                     FILE *f = fopen(json_file, "w");
                     fprintf(f, "{\"progress\": %d}", task->progress_counter);
@@ -52,7 +57,7 @@ int main() {
             }
         }
 
-        // 2. Initialize new task if truly idle
+        // 2. Initialize new task if idle
         if (task == NULL && is_remote == 0) {
             task = malloc(sizeof(task_state_t));
             task->progress_counter = 0;
@@ -62,6 +67,7 @@ int main() {
 
         // 3. Local Execution
         if (py_pid == 0 && task && is_remote == 0) {
+            printf("[LOCAL] Starting analysis at %d%%\n", task->progress_counter);
             py_pid = fork();
             if (py_pid == 0) {
                 execlp("python3", "python3", task->payload_path, NULL);
@@ -83,22 +89,25 @@ int main() {
             write_telemetry_json(&metrics, "edge", task->progress_counter);
         }
 
-        // 5. Completion Handling
+        // 5. Completion
         if (task && task->progress_counter >= 100) {
-            printf("[FINISH] Task success!\n");
+            printf("[COMPLETE] Analysis finished!\n");
             if (py_pid > 0) kill(py_pid, SIGKILL);
             write_telemetry_json(&metrics, "completed", 100);
             return 0;
         }
 
-        // 6. Migration Trigger (Hazard Detected)
+        // 6. Migration Trigger
         if (task && is_remote == 0 && access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
-            if (time(NULL) - last_migration_time > 2) { // Prevents rapid flickers
-                printf("[HAZARD] Sending Task to AWS Cloud Node...\n");
+            if (time(NULL) - last_migration_time > 2) {
+                printf("[HAZARD] Migrating to AWS Cloud...\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 
                 save_checkpoint(state_file, task);
+                set_cloud_ip(cloud_ip); // CRITICAL: Set target before send
+                
                 if (send_checkpoint_to_cloud(state_file) == 0) {
+                    printf("[NETWORK] Transfer complete. Task is remote.\n");
                     free(task);
                     task = NULL;
                     is_remote = 1;
