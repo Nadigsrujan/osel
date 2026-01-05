@@ -174,6 +174,13 @@ def measure_network_latency():
             # Actual measured time in milliseconds
             latency = (end - start) * 1000
             
+            # --- NEW: Migration Traffic Simulation ---
+            # If the task is currently migrating, add 'Transmission Burden'
+            # In a real network, uploading a .bin file causes latency to spike
+            if os.path.exists("/tmp/task_state.bin") and state["location"] == "cloud":
+                # Add 15ms - 25ms of 'Transmission Load'
+                latency += 18.42 
+            
             state["telemetry"]["network_latency"] = round(latency, 2)
             break
         except:
