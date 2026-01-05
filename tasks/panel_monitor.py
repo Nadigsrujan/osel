@@ -86,13 +86,21 @@ def run_analysis(start_at=0, initial_history=None):
         history.append({"T": sensor_data.get('T', 30.0), "time": time.time()})
         if len(history) > 15: history.pop(0)
 
-        # 4. Perform Analytics & Save (Migration-ready)
-        save_internal_state(i, sensor_data, history)
+        # Update progress (Slower for better demo)
+        progress += 2
+        if progress > 100: progress = 100
         
-        if i % 10 == 0:
-            print(f"[TASK] Analyzing... {i}% (Predicting failure in: {i*0.5}s)")
+        # 4. Perform Analytics & Save (Migration-ready)
+        save_internal_state(progress, sensor_data, history) # Use 'progress' and 'history'
+
+        if progress % 10 == 0: # Use progress for printing
+            print(f"[TASK] Analyzing... {progress}% (Predicting failure in: {progress*0.5}s)")
             
-        time.sleep(0.1)
+        # Time for user to react (increased sleep for slower task)
+        time.sleep(1.2)
+
+        if progress >= 100: # Exit loop once 100% is reached
+            break
 
 if __name__ == "__main__":
     with open("/tmp/dashboard_started", "w") as f:

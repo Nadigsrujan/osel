@@ -9,7 +9,7 @@
 
 int main() {
     printf("============================================\n");
-    printf("   AWS CLOUD NODE - READY (Non-Blocking)\n");
+    printf("   AWS CLOUD NODE - READY (Auto-Return On Finish)\n");
     printf("============================================\n\n");
     
     task_state_t *task = NULL;
@@ -20,10 +20,9 @@ int main() {
     const char *json_file = "/tmp/car_detect_internal.json";
 
     while (1) {
-        // 1. Check for incoming migration (Non-blocking check)
+        // 1. Wait for migration
         if (task == NULL) {
-            int res = receive_checkpoint_from_edge(state_file);
-            if (res == 0) {
+            if (receive_checkpoint_from_edge(state_file) == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);
                 printf("[RECEIVE] Task resumed at %d%%\n", task->progress_counter);
@@ -35,7 +34,7 @@ int main() {
             }
         }
 
-        // 2. Launch locally on AWS
+        // 2. Launch locally
         if (task && py_pid == 0) {
             py_pid = fork();
             if (py_pid == 0) {
@@ -44,7 +43,7 @@ int main() {
             }
         }
 
-        // 3. Monitor and Serve Pull Request
+        // 3. Monitor
         if (task) {
             FILE *pf = fopen(json_file, "r");
             if (pf) {
@@ -58,14 +57,19 @@ int main() {
             
             printf("[CLOUD] Analyzing... %d%%\n", task->progress_counter);
 
+            // Handle completion OR pull request
+            save_checkpoint(return_file, task);
+            
+            // If task is finished (100%), we wait for the final pull
             if (task->progress_counter >= 100) {
-                printf("[FINISH] Complete.\n");
-                if (py_pid > 0) kill(py_pid, SIGKILL);
-                return 0;
+                printf("[FINISH] Complete. Waiting for Edge to pull final result...\n");
+                if (send_return_to_edge_service(return_file) == 0) {
+                   if (py_pid > 0) kill(py_pid, SIGKILL);
+                   return 0; // End session
+                }
             }
 
-            // Non-blocking check for Return Pull
-            save_checkpoint(return_file, task);
+            // Normal non-blocking return check
             if (send_return_to_edge_service(return_file) == 0) {
                 printf("[RETURN] Task PULLED back by Edge.\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
@@ -74,8 +78,7 @@ int main() {
                 py_pid = 0;
             }
         }
-
-        usleep(500000); // 0.5s loop
+        usleep(100000);
     }
     return 0;
 }
