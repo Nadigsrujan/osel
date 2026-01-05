@@ -34,9 +34,6 @@ def save_internal_state(progress, sensor_data, history):
         seconds_to_fire = max(0, round((critical_temp - current_temp) / slope, 1))
     
     # Danger Score (0-100)
-    # Factor 1: Current Temp
-    # Factor 2: Slope (Aggressive heat is dangerous)
-    # Factor 3: Intrusion
     danger_score = (current_temp - 20) * 1.5
     danger_score += (slope * 50)
     if current_dist < 10: danger_score += 30
@@ -54,7 +51,7 @@ def save_internal_state(progress, sensor_data, history):
             "fire_confidence": f"{round(min(98, danger_score + (slope*10)), 1)}%"
         },
         "timestamp": time.time(),
-        "history_buffer": history[-10:] # Keep buffer in checkpoint for migration!
+        "history_buffer": history[-10:] # Keep buffer in checkpoint
     }
 
     with open("/tmp/car_detect_internal.json", "w") as f:
@@ -65,11 +62,12 @@ def run_analysis(start_at=0, initial_history=None):
     print(f"[TASK] Predictive Engine started at {start_at}%")
     
     history = initial_history or []
+    progress = start_at
     
-    for i in range(start_at, 101):
-        # 1. HEAVY COMPUTE: Cloud-only Predictive Math
-        # We simulate the complex 'Slope Analysis' and 'Prediction' load
-        end_time = time.time() + 0.35
+    while progress < 100:
+        # 1. HEAVY COMPUTE: Cloud-only Predictive Math (Simulated)
+        # Reduced from 0.35 to 0.1 for speed
+        end_time = time.time() + 0.1
         while time.time() < end_time:
             _ = 8000 * 8000 
 
@@ -86,26 +84,23 @@ def run_analysis(start_at=0, initial_history=None):
         history.append({"T": sensor_data.get('T', 30.0), "time": time.time()})
         if len(history) > 15: history.pop(0)
 
-        # Update progress (Slower for better demo)
-        progress += 2
+        # Update progress (Faster: 5% per step)
+        progress += 5
         if progress > 100: progress = 100
         
-        # 4. Perform Analytics & Save (Migration-ready)
-        save_internal_state(progress, sensor_data, history) # Use 'progress' and 'history'
+        # 4. Perform Analytics & Save
+        save_internal_state(progress, sensor_data, history)
 
-        if progress % 10 == 0: # Use progress for printing
-            print(f"[TASK] Analyzing... {progress}% (Predicting failure in: {progress*0.5}s)")
+        if progress % 10 == 0:
+            print(f"[TASK] Analyzing... {progress}%")
             
-        # Time for user to react (increased sleep for slower task)
-        time.sleep(1.2)
+        # Reduced sleep from 1.2 to 0.4 for speed
+        time.sleep(0.4)
 
-        if progress >= 100: # Exit loop once 100% is reached
-            break
+    print("[TASK] Finished 100%")
+    time.sleep(1) # Final grace period
 
 if __name__ == "__main__":
-    with open("/tmp/dashboard_started", "w") as f:
-        f.write("1")
-
     # Migration Resume Support
     start_progress = 0
     history_buffer = []
@@ -116,7 +111,6 @@ if __name__ == "__main__":
                 if saved.get("progress", 0) < 100:
                     start_progress = saved["progress"]
                     history_buffer = saved.get("history_buffer", [])
-                    print(f"[RESUME] Recovered history buffer: {len(history_buffer)} samples")
         except: pass
 
     run_analysis(start_progress, history_buffer)
