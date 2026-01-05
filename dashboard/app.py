@@ -336,6 +336,7 @@ def serial_watchdog_thread():
                     
                     # Update global sensor state
                     state["sensor_data"] = data
+                    print(f"  [HARDWARE] T={data.get('T')} D={data.get('D')} L={data.get('L')}")
                     
                     if "MIGRATE" in line or "CLOUD_DATA" in line:
                         state["sensor_status"] = "detected"
@@ -378,13 +379,14 @@ def read_task_status():
         try:
             with open(json_file, 'r') as f:
                 data = json.load(f)
-                old_progress = state["progress"]
-                state["progress"] = data.get("progress", 0)
-                state["task_name"] = data.get("task", "Panel monitor")
+                # Only update local state if we are running LOCALLY
+                # If we are in CLOUD, trust the /api/cloud_sync updates instead
+                if state["location"] != "cloud":
+                    state["progress"] = data.get("progress", 0)
+                    state["task_name"] = data.get("task", "Panel monitor")
                 
-                # If sensor data is inside this progress JSON, use it too
-                if "sensor_data" in data:
-                    state["sensor_data"] = data["sensor_data"]
+                # NOTE: We keep raw sensor_data coming from the Watchdog thread
+                pass
                 
                 # If analytics predictive data is present
                 if "analytics" in data:
