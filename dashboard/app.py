@@ -211,7 +211,8 @@ def read_telemetry():
                 # Also get location and progress from C program
                 if "location" in data:
                     state["location"] = data["location"]
-                if "progress" in data:
+                if "progress" in data and data["progress"] >= 0:
+                    # Only update progress if it's valid (not -1 placeholder)
                     state["progress"] = data["progress"]
                 return  # Got data from C program
         except Exception as e:
