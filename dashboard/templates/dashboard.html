@@ -735,103 +735,104 @@
                             document.getElementById('ai-slope').className = 'metric-value' + (slopeVal > 0.5 ? ' danger' : '');
                             document.getElementById('ai-prediction').className = 'metric-value' + (data.analytics.est_failure_sec !== 'Stable' ? ' danger' : '');
                         }
+                    }
 
-                        // CPU Chart
-                        if (data.cpu_history && data.cpu_history.length > 0) {
-                            cpuChart.data.datasets[0].data = data.cpu_history;
-                            cpuChart.update('none');
+                    // CPU Chart
+                    if (data.cpu_history && data.cpu_history.length > 0) {
+                        cpuChart.data.datasets[0].data = data.cpu_history;
+                        cpuChart.update('none');
+                    }
+
+                    // Decision Engine
+                    if (data.decision) {
+                        document.getElementById('cpu-forecast').innerHTML =
+                            `CPU forecast: <span>${data.decision.cpu_forecast}%</span> ↑`;
+                        document.getElementById('network-status').innerHTML =
+                            `Network latency: <span>${data.decision.network_status}</span>`;
+                        document.getElementById('memory-status').innerHTML =
+                            `Memory status: <span>${data.telemetry.mem > 80 ? 'High' : 'OK'}</span>`;
+                        document.getElementById('decision-reason').textContent = data.decision.reason;
+
+                        const actionEl = document.getElementById('decision-action');
+                        if (data.decision.action && data.decision.action !== 'None') {
+                            actionEl.textContent = '➡ ' + data.decision.action;
+                            actionEl.style.display = 'inline-block';
+                        } else {
+                            actionEl.style.display = 'none';
                         }
+                    }
 
-                        // Decision Engine
-                        if (data.decision) {
-                            document.getElementById('cpu-forecast').innerHTML =
-                                `CPU forecast: <span>${data.decision.cpu_forecast}%</span> ↑`;
-                            document.getElementById('network-status').innerHTML =
-                                `Network latency: <span>${data.decision.network_status}</span>`;
-                            document.getElementById('memory-status').innerHTML =
-                                `Memory status: <span>${data.telemetry.mem > 80 ? 'High' : 'OK'}</span>`;
-                            document.getElementById('decision-reason').textContent = data.decision.reason;
+                    // Migration diagram
+                    const nodeEdge = document.getElementById('node-edge');
+                    const nodeCloud = document.getElementById('node-cloud');
+                    const arrow = document.getElementById('arrow');
 
-                            const actionEl = document.getElementById('decision-action');
-                            if (data.decision.action && data.decision.action !== 'None') {
-                                actionEl.textContent = '➡ ' + data.decision.action;
-                                actionEl.style.display = 'inline-block';
-                            } else {
-                                actionEl.style.display = 'none';
-                            }
-                        }
+                    nodeEdge.classList.remove('active');
+                    nodeCloud.classList.remove('active');
+                    arrow.className = 'arrow';
 
-                        // Migration diagram
-                        const nodeEdge = document.getElementById('node-edge');
-                        const nodeCloud = document.getElementById('node-cloud');
-                        const arrow = document.getElementById('arrow');
+                    if (data.location === 'edge') nodeEdge.classList.add('active');
+                    else if (data.location === 'cloud') nodeCloud.classList.add('active');
 
-                        nodeEdge.classList.remove('active');
-                        nodeCloud.classList.remove('active');
-                        arrow.className = 'arrow';
+                    if (lastLocation === 'edge' && data.location === 'cloud') arrow.classList.add('active-right');
+                    else if (lastLocation === 'cloud' && data.location === 'edge') arrow.classList.add('active-left');
+                    lastLocation = data.location;
 
-                        if (data.location === 'edge') nodeEdge.classList.add('active');
-                        else if (data.location === 'cloud') nodeCloud.classList.add('active');
+                    // Process status
+                    updateProcessStatus('edge', data.edge_pid, data.edge_running);
+                    updateProcessStatus('cloud', data.cloud_pid, data.cloud_running);
 
-                        if (lastLocation === 'edge' && data.location === 'cloud') arrow.classList.add('active-right');
-                        else if (lastLocation === 'cloud' && data.location === 'edge') arrow.classList.add('active-left');
-                        lastLocation = data.location;
+                    // Sensor status
+                    updateSensorStatus(data.sensor_status);
 
-                        // Process status
-                        updateProcessStatus('edge', data.edge_pid, data.edge_running);
-                        updateProcessStatus('cloud', data.cloud_pid, data.cloud_running);
-
-                        // Sensor status
-                        updateSensorStatus(data.sensor_status);
-
-                        // Timeline
-                        if (data.migration_timeline && data.migration_timeline.length > 0) {
-                            document.getElementById('timeline-list').innerHTML =
-                                data.migration_timeline.slice().reverse().map(t => `
+                    // Timeline
+                    if (data.migration_timeline && data.migration_timeline.length > 0) {
+                        document.getElementById('timeline-list').innerHTML =
+                            data.migration_timeline.slice().reverse().map(t => `
                                 <div class="timeline-item">
                                     <span class="timeline-time">${t.time}</span> ${t.details}
                                 </div>
                             `).join('');
-                        }
+                    }
 
-                        // Task output
-                        if (data.task_output && data.task_output.length > 0) {
-                            document.getElementById('task-output').innerHTML =
-                                data.task_output.map(o => `
+                    // Task output
+                    if (data.task_output && data.task_output.length > 0) {
+                        document.getElementById('task-output').innerHTML =
+                            data.task_output.map(o => `
                                 <div class="task-output-line">${o.text}</div>
                             `).join('');
-                        }
+                    }
 
-                        // Faults
-                        if (data.faults && data.faults.length > 0) {
-                            document.getElementById('fault-list').innerHTML =
-                                data.faults.slice().reverse().map(f => `
+                    // Faults
+                    if (data.faults && data.faults.length > 0) {
+                        document.getElementById('fault-list').innerHTML =
+                            data.faults.slice().reverse().map(f => `
                                 <div class="fault-item ${f.message.includes('✅') ? 'recovery' : ''}">${f.message}</div>
                             `).join('');
-                        }
+                    }
 
-                        // Migration stats
-                        document.getElementById('total-migrations').textContent =
-                            data.migration_stats.total_migrations;
-                        document.getElementById('last-migration').textContent =
-                            data.migration_stats.last_migration_time || '--';
-                        document.getElementById('transfer-size').textContent =
-                            data.migration_stats.last_transfer_size + ' KB';
-                        document.getElementById('downtime').textContent =
-                            data.migration_stats.last_downtime_ms + ' ms';
+                    // Migration stats
+                    document.getElementById('total-migrations').textContent =
+                        data.migration_stats.total_migrations;
+                    document.getElementById('last-migration').textContent =
+                        data.migration_stats.last_migration_time || '--';
+                    document.getElementById('transfer-size').textContent =
+                        data.migration_stats.last_transfer_size + ' KB';
+                    document.getElementById('downtime').textContent =
+                        data.migration_stats.last_downtime_ms + ' ms';
 
-                        // Info bar
-                        document.getElementById('uptime').textContent = formatUptime(data.uptime);
-                        document.getElementById('health-status').textContent = data.system_health || 'OK';
+                    // Info bar
+                    document.getElementById('uptime').textContent = formatUptime(data.uptime);
+                    document.getElementById('health-status').textContent = data.system_health || 'OK';
 
-                        // Buttons
-                        document.getElementById('btn-start').disabled =
-                            data.location !== 'idle' && data.location !== 'completed';
-                        document.getElementById('btn-stop').disabled = data.location === 'idle';
+                    // Buttons
+                    document.getElementById('btn-start').disabled =
+                        data.location !== 'idle' && data.location !== 'completed';
+                    document.getElementById('btn-stop').disabled = data.location === 'idle';
 
-                        // History
-                        updateHistory(data.history);
-                    })
+                    // History
+                    updateHistory(data.history);
+                })
                 .catch(console.error);
         }
 
