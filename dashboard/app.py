@@ -23,10 +23,9 @@ except ImportError:
 
 app = Flask(__name__)
 
-# Dynamic path detection - works on both Mac and Ubuntu
-PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLOUD_BIN = os.path.join(PROJECT_PATH, "cloud", "cloud_runtime")
-EDGE_BIN = os.path.join(PROJECT_PATH, "edge", "edge_runtime")
+# AWS Cloud Configuration
+CLOUD_IP = "54.255.248.144"
+CLOUD_PORT = 9090
 
 # Start time for uptime calculation
 start_time = time.time()
@@ -158,8 +157,8 @@ def measure_network_latency():
     """Measure real-world network latency (Edge-to-Cloud link)"""
     import socket
     
-    # Target: Real public DNS for demo credibility, or the local cloud manager
-    targets = [("8.8.8.8", 53), ("1.1.1.1", 53), ("127.0.0.1", 9090)]
+    # Target: Real public DNS and YOUR AWS Cloud Instance
+    targets = [("8.8.8.8", 53), (CLOUD_IP, CLOUD_PORT)]
     
     for target_ip, target_port in targets:
         try:
@@ -584,26 +583,16 @@ def api_start():
             log_event(f"❌ Edge binary not found")
             return jsonify({"error": f"Edge binary not found: {EDGE_BIN}"}), 400
         
-        # Start cloud runtime
-        log_event("🚀 Starting Cloud Runtime...")
-        cloud_proc = subprocess.Popen(
-            [CLOUD_BIN],
-            cwd=PROJECT_PATH,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        state["cloud_pid"] = cloud_proc.pid
-        time.sleep(2)  # Increased wait time
+        # NOTE: Cloud Runtime is now running on AWS (54.255.248.144)
+        # We NO LONGER start it locally.
+        log_event(f"🌐 Cloud is remote: {CLOUD_IP}")
+        state["cloud_pid"] = 9999 # Place holder for remote status
+        state["cloud_running"] = True
         
-        # Verify cloud started
-        if cloud_proc.poll() is not None:
-            log_event("❌ Cloud runtime failed to start")
-            return jsonify({"error": "Cloud runtime failed to start"}), 500
-        
-        # Start edge runtime
-        log_event("🚀 Starting Edge Runtime...")
+        # Start edge runtime with AWS CLOUD IP
+        log_event(f"🚀 Starting Edge Manager (Target: AWS {CLOUD_IP})...")
         edge_proc = subprocess.Popen(
-            [EDGE_BIN],
+            [EDGE_BIN, CLOUD_IP],
             cwd=PROJECT_PATH,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL

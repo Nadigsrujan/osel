@@ -8,6 +8,9 @@
 #include "../include/telemetry.h"
 #include "../include/network_transfer.h"
 
+#define CLOUD_IP "54.255.248.144"
+#define CLOUD_PORT 9090
+
 // Configuration
 #define CPU_THRESHOLD 10.0
 #define BATTERY_THRESHOLD 15
@@ -31,8 +34,8 @@ int main(int argc, char *argv[]) {
     printf("   EDGE TASK MANAGER - Phase 2 (Real HW)   \n");
     printf("============================================\n\n");
     
-    // Configuration from command line
-    char *cloud_ip = "127.0.0.1";
+    // Configuration from command line or hardcoded AWS default
+    char *cloud_ip = CLOUD_IP;
     char *task_image = "edge/input/car.jpg";
     
     if (argc > 1) cloud_ip = argv[1];
