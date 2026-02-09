@@ -118,8 +118,9 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+    }
 
-        usleep(500000); 
+    usleep(500000); 
     }
     return 0;
 }
