@@ -99,40 +99,39 @@ int main(int argc, char *argv[]) {
 
         // 6. Migration Trigger
         if (task && is_remote == 0) {
-            int hazard_present = (access("/tmp/SENSOR_HAZARD", F_OK) == 0);
+            const char *h_file = "/tmp/SENSOR_HAZARD";
+            int hazard_present = (access(h_file, F_OK) == 0);
             
-            // HEARTBEAT DEBUG: Show status every 2 seconds
             static time_t last_heartbeat = 0;
             if (time(NULL) - last_heartbeat > 2) {
-                printf("[WATCHER] Task Active at %d%% | Hazard File: %s\n", 
-                        task->progress_counter, hazard_present ? "FOUND ⚠️" : "Not Found 🟢");
+                printf("[WATCHER] Task:%d%% | HazardFile(%s): %s\n", 
+                        task->progress_counter, h_file, hazard_present ? "DETECTED!" : "None");
                 last_heartbeat = time(NULL);
             }
 
             if (hazard_present) {
-                printf("[DEBUG] Hazard detected! Checking hysteresis... (Elapsed: %ld s)\n", time(NULL) - last_migration_time);
+                printf("[HAZARD] Note found! Time since last move: %ld s\n", time(NULL) - last_migration_time);
                 if (time(NULL) - last_migration_time > 2) {
-                    printf("[HAZARD] Migrating to AWS Cloud...\n");
+                    printf("[ACTION] Initiating Migration to AWS...\n");
                     if (py_pid > 0) kill(py_pid, SIGKILL);
                     
                     save_checkpoint(state_file, task);
                     set_cloud_ip(cloud_ip);
                     
                     if (send_checkpoint_to_cloud(state_file) == 0) {
-                        printf("[NETWORK] Transfer complete. Task is remote.\n");
+                        printf("[SUCCESS] Transfer Finished. Task is now on AWS.\n");
                         free(task);
                         task = NULL;
                         is_remote = 1;
                         py_pid = 0;
                         last_migration_time = time(NULL);
                     } else {
-                        printf("[ERROR] Cloud transfer failed!\n");
+                        printf("[ERROR] Network Transfer Failed!\n");
                     }
                 }
             }
         }
-
-    usleep(500000); 
+        usleep(500000); 
     }
     return 0;
 }
