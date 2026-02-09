@@ -370,17 +370,19 @@ def serial_watchdog_thread():
                     state["sensor_data"] = data
                     print(f"  [HARDWARE] T={data.get('T')} D={data.get('D')} L={data.get('L')}")
                     
-                    if "MIGRATE" in line or "CLOUD_DATA" in line:
+                    # DANGER THRESHOLDS (Matches Arduino)
+                    temp_hazard = data.get('T', 0) > 38.0
+                    dist_hazard = data.get('D', 0) > 0 and data.get('D', 0) < 10.0
+                    
+                    if "MIGRATE" in line or "CLOUD_DATA" in line or temp_hazard or dist_hazard:
                         state["sensor_status"] = "detected"
                         state["sensor_message"] = "⚠️ HAZARD DETECTED"
-                        # Create physical trigger for C schedulers
                         if not os.path.exists(hazard_file):
                             with open(hazard_file, "w") as f: f.write("1")
                         save_panel_status("detected", "⚠️ HAZARD DETECTED", data)
                     else:
                         state["sensor_status"] = "waiting"
                         state["sensor_message"] = "🟢 System Safe"
-                        # Remove trigger
                         if os.path.exists(hazard_file):
                             os.remove(hazard_file)
                         save_panel_status("waiting", "🟢 System Safe", data)

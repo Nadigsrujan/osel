@@ -99,7 +99,17 @@ int main(int argc, char *argv[]) {
 
         // 6. Migration Trigger
         if (task && is_remote == 0) {
-            if (access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
+            int hazard_present = (access("/tmp/SENSOR_HAZARD", F_OK) == 0);
+            
+            // HEARTBEAT DEBUG: Show status every 2 seconds
+            static time_t last_heartbeat = 0;
+            if (time(NULL) - last_heartbeat > 2) {
+                printf("[WATCHER] Task Active at %d%% | Hazard File: %s\n", 
+                        task->progress_counter, hazard_present ? "FOUND ⚠️" : "Not Found 🟢");
+                last_heartbeat = time(NULL);
+            }
+
+            if (hazard_present) {
                 printf("[DEBUG] Hazard detected! Checking hysteresis... (Elapsed: %ld s)\n", time(NULL) - last_migration_time);
                 if (time(NULL) - last_migration_time > 2) {
                     printf("[HAZARD] Migrating to AWS Cloud...\n");
