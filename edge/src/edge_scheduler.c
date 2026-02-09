@@ -99,26 +99,28 @@ int main(int argc, char *argv[]) {
 
         // 6. Migration Trigger
         if (task && is_remote == 0) {
-            // Debug: Show if we see the hazardous file
             if (access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
+                printf("[DEBUG] Hazard detected! Checking hysteresis... (Elapsed: %ld s)\n", time(NULL) - last_migration_time);
                 if (time(NULL) - last_migration_time > 2) {
-                printf("[HAZARD] Migrating to AWS Cloud...\n");
-                if (py_pid > 0) kill(py_pid, SIGKILL);
-                
-                save_checkpoint(state_file, task);
-                set_cloud_ip(cloud_ip); // CRITICAL: Set target before send
-                
-                if (send_checkpoint_to_cloud(state_file) == 0) {
-                    printf("[NETWORK] Transfer complete. Task is remote.\n");
-                    free(task);
-                    task = NULL;
-                    is_remote = 1;
-                    py_pid = 0;
-                    last_migration_time = time(NULL);
+                    printf("[HAZARD] Migrating to AWS Cloud...\n");
+                    if (py_pid > 0) kill(py_pid, SIGKILL);
+                    
+                    save_checkpoint(state_file, task);
+                    set_cloud_ip(cloud_ip);
+                    
+                    if (send_checkpoint_to_cloud(state_file) == 0) {
+                        printf("[NETWORK] Transfer complete. Task is remote.\n");
+                        free(task);
+                        task = NULL;
+                        is_remote = 1;
+                        py_pid = 0;
+                        last_migration_time = time(NULL);
+                    } else {
+                        printf("[ERROR] Cloud transfer failed!\n");
+                    }
                 }
             }
         }
-    }
 
     usleep(500000); 
     }
