@@ -22,15 +22,23 @@ int main() {
     while (1) {
         // 1. Wait for migration from Edge
         if (task == NULL) {
-            if (receive_checkpoint_from_edge(state_file) == 0) {
+            printf("[IDLE] Waiting for task migration on Port 9090...\n");
+            int status = receive_checkpoint_from_edge(state_file);
+            
+            if (status == 0) {
                 task = malloc(sizeof(task_state_t));
                 restore_checkpoint(state_file, task);
-                printf("[MIGRATION] Received task at %d%%\n", task->progress_counter);
+                printf("[MIGRATION] SUCCESS! Received task at %d%%\n", task->progress_counter);
                 
                 FILE *f = fopen(json_file, "w");
                 fprintf(f, "{\"progress\": %d}", task->progress_counter);
                 fclose(f);
                 py_pid = 0;
+            } else if (status == -2) {
+                // Timeout is normal, but let's log it for debugging
+                // printf("[DEBUG] No connection attempt in last 3 seconds. Still waiting...\n");
+            } else {
+                printf("[ERROR] Network error during reception. Status: %d\n", status);
             }
         }
 

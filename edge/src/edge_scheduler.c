@@ -98,8 +98,10 @@ int main(int argc, char *argv[]) {
         }
 
         // 6. Migration Trigger
-        if (task && is_remote == 0 && access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
-            if (time(NULL) - last_migration_time > 2) {
+        if (task && is_remote == 0) {
+            // Debug: Show if we see the hazardous file
+            if (access("/tmp/SENSOR_HAZARD", F_OK) == 0) {
+                if (time(NULL) - last_migration_time > 2) {
                 printf("[HAZARD] Migrating to AWS Cloud...\n");
                 if (py_pid > 0) kill(py_pid, SIGKILL);
                 
